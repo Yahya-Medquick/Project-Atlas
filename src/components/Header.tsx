@@ -68,6 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenApiDocs && (
             <button
               onClick={onOpenApiDocs}
+              aria-label="Public REST API Documentation"
               className="p-2 sm:px-3 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors flex items-center gap-1.5 text-xs font-semibold"
               title="Public REST API v1 Documentation"
             >
@@ -79,6 +80,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Admin Dashboard Trigger */}
           <button
             onClick={onOpenAdmin}
+            aria-label="Open Admin Dashboard"
             className="p-2 sm:px-3 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors flex items-center gap-2 text-xs font-semibold"
             title="Admin & Telemetry Dashboard"
           >
@@ -90,6 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* User Profile Button */}
           <button
             onClick={onOpenProfile}
+            aria-label="Open User Profile"
             className="p-2 sm:px-3 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors flex items-center gap-2 text-xs font-semibold"
             title="User Profile & History"
           >
@@ -100,6 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Saved Bookmarks Button */}
           <button
             onClick={onOpenBookmarks}
+            aria-label={`View ${bookmarksCount} saved bookmarks`}
             className="relative p-2 sm:px-3 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors flex items-center gap-2 text-xs font-medium"
             title="Saved Bookmarks"
           >
@@ -115,6 +119,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Theme Switcher Button */}
           <button
             onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
             className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors flex items-center justify-center text-xs"
             title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
           >

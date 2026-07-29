@@ -8,7 +8,17 @@ export type CategoryType =
   | 'books' 
   | 'research' 
   | 'communities' 
-  | 'related';
+  | 'related'
+  | 'recommendations';
+
+export interface RecommendationItem {
+  id: string;
+  title: string;
+  category: string;
+  reason: string;
+  url: string;
+  relevanceScore: number;
+}
 
 export interface CategoryInfo {
   id: CategoryType;

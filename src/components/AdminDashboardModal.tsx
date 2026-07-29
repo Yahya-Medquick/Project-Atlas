@@ -40,12 +40,22 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [newAliases, setNewAliases] = useState("");
   const [newPopularity, setNewPopularity] = useState(85);
 
+  const [adminToken, setAdminToken] = useState<string>(() => {
+    return localStorage.getItem("admin_token") || "";
+  });
+
+  const handleTokenChange = (token: string) => {
+    setAdminToken(token);
+    localStorage.setItem("admin_token", token);
+  };
+
   const fetchAdminData = async () => {
     setIsLoading(true);
     try {
+      const authHeaders = { "X-Admin-Token": adminToken };
       const [statsRes, entitiesRes] = await Promise.all([
-        fetch("/api/admin/stats"),
-        fetch("/api/admin/entities"),
+        fetch("/api/admin/stats", { headers: authHeaders }),
+        fetch("/api/admin/entities", { headers: authHeaders }),
       ]);
 
       if (statsRes.ok) {
@@ -67,11 +77,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     if (isOpen) {
       fetchAdminData();
     }
-  }, [isOpen]);
+  }, [isOpen, adminToken]);
 
   const handleClearCache = async () => {
     try {
-      const res = await fetch("/api/admin/cache/clear", { method: "POST" });
+      const res = await fetch("/api/admin/cache/clear", {
+        method: "POST",
+        headers: { "X-Admin-Token": adminToken },
+      });
       if (res.ok) {
         setRefreshMessage("Cache cleared successfully!");
         fetchAdminData();
@@ -84,7 +97,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const handleTriggerRefresh = async (slug: string) => {
     try {
-      const res = await fetch(`/api/admin/entities/${slug}/refresh`, { method: "POST" });
+      const res = await fetch(`/api/admin/entities/${slug}/refresh`, {
+        method: "POST",
+        headers: { "X-Admin-Token": adminToken },
+      });
       if (res.ok) {
         const data = await res.json();
         setRefreshMessage(`Entity "${slug}" refreshed! Freshness: 100%`);
@@ -108,7 +124,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
       const res = await fetch("/api/admin/entities", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Token": adminToken,
+        },
         body: JSON.stringify({
           title: newTitle.trim(),
           slug: newSlug.trim().toLowerCase(),

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, User, History, Settings, Bookmark, Check, Shield, Search, Sparkles } from "lucide-react";
 import { UserProfile } from "../types";
+import { useUser } from "../context/UserContext";
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -21,19 +22,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   bookmarksCount,
   onOpenBookmarks,
 }) => {
-  const [profile, setProfile] = useState<UserProfile>({
-    name: "Alex Vance",
-    email: "doctordiet78f@gmail.com",
-    role: "Researcher",
-    savedSearches: ["Gravity", "Quantum Computing", "General Relativity"],
-    recentSearches,
-    preferences: {
-      defaultSort: "relevance",
-      autoExpandSynonyms: true,
-      compactView: false,
-    },
-  });
-
+  const { profile, updatePreferences } = useUser();
   const [activeTab, setActiveTab] = useState<"profile" | "history" | "preferences">("profile");
 
   if (!isOpen) return null;
@@ -185,12 +174,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     type="checkbox"
                     checked={profile.preferences.autoExpandSynonyms}
                     onChange={(e) =>
-                      setProfile({
-                        ...profile,
-                        preferences: { ...profile.preferences, autoExpandSynonyms: e.target.checked },
-                      })
+                      updatePreferences({ autoExpandSynonyms: e.target.checked })
                     }
-                    className="w-4 h-4 accent-indigo-600"
+                    className="w-4 h-4 accent-indigo-600 cursor-pointer"
                   />
                 </div>
               </div>
@@ -205,12 +191,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     type="checkbox"
                     checked={profile.preferences.compactView}
                     onChange={(e) =>
-                      setProfile({
-                        ...profile,
-                        preferences: { ...profile.preferences, compactView: e.target.checked },
-                      })
+                      updatePreferences({ compactView: e.target.checked })
                     }
-                    className="w-4 h-4 accent-indigo-600"
+                    className="w-4 h-4 accent-indigo-600 cursor-pointer"
                   />
                 </div>
               </div>

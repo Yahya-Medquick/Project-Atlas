@@ -3,6 +3,7 @@ import { CategoryType, Entity } from "./types";
 import { useTheme } from "./hooks/useTheme";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useCategoryData } from "./hooks/useCategoryData";
+import { useUser } from "./context/UserContext";
 import { Header } from "./components/Header";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryTabs } from "./components/CategoryTabs";
@@ -40,6 +41,7 @@ const DeveloperApiModal = lazy(() =>
 export default function App() {
   const { theme, toggleTheme } = useTheme();
   const { bookmarks, addBookmark, removeBookmark, isBookmarked } = useBookmarks();
+  const { profile } = useUser();
 
   const [query, setQuery] = useState<string>("");
   const [activeCategory, setActiveCategory] = useState<CategoryType>("overview");
@@ -58,7 +60,6 @@ export default function App() {
   const [matchedAlias, setMatchedAlias] = useState<string | null>(null);
   const [rankingScore, setRankingScore] = useState<number>(95);
   const [synonymsConnected, setSynonymsConnected] = useState<string[]>([]);
-
 
   // Search History LocalStorage
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
@@ -106,17 +107,24 @@ export default function App() {
     }
   };
 
-  // Sync URL search params
+  // Sync URL search params and listen for popstate (browser back/forward navigation)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const qParam = params.get("q") || "";
-    const catParam = (params.get("cat") || "overview") as CategoryType;
+    const syncFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const qParam = params.get("q") || "";
+      const catParam = (params.get("cat") || "overview") as CategoryType;
 
-    if (qParam) {
       setQuery(qParam);
       setActiveCategory(catParam);
-      fetchEntityData(qParam);
-    }
+      if (qParam) {
+        fetchEntityData(qParam);
+      }
+    };
+
+    syncFromUrl();
+
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
   }, []);
 
   const updateUrlParams = (newQuery: string, newCat: CategoryType) => {
@@ -182,6 +190,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-200">
+      {/* Skip Navigation Link for Accessibility */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 z-50 px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-lg focus:outline-none"
+      >
+        Skip to main content
+      </a>
+
       {/* Navbar */}
       <Header
         theme={theme}
@@ -196,7 +212,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         {!query ? (
           /* HOMEPAGE LANDING VIEW - Clean Minimalism */
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20 space-y-16">

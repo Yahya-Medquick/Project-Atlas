@@ -22,7 +22,7 @@ export function invalidateCache(topic?: string, category?: CategoryType) {
   }
 
   const topicLower = topic?.toLowerCase();
-  for (const [key] of clientMemoryCache.keys()) {
+  for (const key of Array.from(clientMemoryCache.keys())) {
     const matchesTopic = topicLower ? key.includes(topicLower) : true;
     const matchesCategory = category ? key.startsWith(`${category}:`) : true;
     if (matchesTopic && matchesCategory) {

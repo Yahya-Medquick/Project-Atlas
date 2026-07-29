@@ -10,6 +10,7 @@ import {
   FileText,
   MessageSquare,
   Network,
+  Sparkles,
 } from "lucide-react";
 import { CategoryInfo, CategoryType } from "../types";
 
@@ -24,6 +25,7 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: "research", label: "Research Papers", shortLabel: "Research", iconName: "FileText", description: "OpenAlex peer-reviewed paper archive", badge: "Live DOIs" },
   { id: "communities", label: "Communities", shortLabel: "Communities", iconName: "MessageSquare", description: "Reddit discussions, forums & Q&A" },
   { id: "related", label: "Related Topics", shortLabel: "Graph", iconName: "Network", description: "Knowledge graph & connected node network" },
+  { id: "recommendations", label: "Recommendations", shortLabel: "Recs", iconName: "Sparkles", description: "Smart AI recommendations & curated topics", badge: "Smart AI" },
 ];
 
 interface CategoryTabsProps {
@@ -49,6 +51,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
       case "FileText": return <FileText className="w-4 h-4" />;
       case "MessageSquare": return <MessageSquare className="w-4 h-4" />;
       case "Network": return <Network className="w-4 h-4" />;
+      case "Sparkles": return <Sparkles className="w-4 h-4" />;
       default: return <BookOpen className="w-4 h-4" />;
     }
   };
@@ -65,6 +68,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
               <button
                 key={cat.id}
                 onClick={() => onSelectCategory(cat.id)}
+                aria-label={`Switch to ${cat.label} tab`}
                 className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 shrink-0 select-none ${
                   isActive
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/25"

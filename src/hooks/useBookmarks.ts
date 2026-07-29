@@ -14,15 +14,26 @@ export function useBookmarks() {
     return [];
   });
 
+  // Fetch bookmarks from PostgreSQL backend API on mount
   useEffect(() => {
-    try {
-      localStorage.setItem("atlas_bookmarks", JSON.stringify(bookmarks));
-    } catch (err) {
-      console.warn("Failed to persist bookmarks:", err);
+    async function fetchServerBookmarks() {
+      try {
+        const res = await fetch("/api/bookmarks");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.bookmarks)) {
+            setBookmarks(data.bookmarks);
+            localStorage.setItem("atlas_bookmarks", JSON.stringify(data.bookmarks));
+          }
+        }
+      } catch (err) {
+        console.warn("Could not sync bookmarks with server persistence tier:", err);
+      }
     }
-  }, [bookmarks]);
+    fetchServerBookmarks();
+  }, []);
 
-  const addBookmark = (item: Omit<BookmarkItem, "id" | "savedAt">) => {
+  const addBookmark = async (item: Omit<BookmarkItem, "id" | "savedAt">) => {
     const id = `${item.topic}-${item.category}-${encodeURIComponent(item.title)}`;
     if (bookmarks.some((b) => b.id === id)) return;
 
@@ -31,11 +42,33 @@ export function useBookmarks() {
       id,
       savedAt: Date.now(),
     };
+
     setBookmarks((prev) => [newBookmark, ...prev]);
+    localStorage.setItem("atlas_bookmarks", JSON.stringify([newBookmark, ...bookmarks]));
+
+    try {
+      await fetch("/api/bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item),
+      });
+    } catch (err) {
+      console.warn("Failed to save bookmark to PostgreSQL:", err);
+    }
   };
 
-  const removeBookmark = (id: string) => {
+  const removeBookmark = async (id: string) => {
     setBookmarks((prev) => prev.filter((b) => b.id !== id));
+    const updated = bookmarks.filter((b) => b.id !== id);
+    localStorage.setItem("atlas_bookmarks", JSON.stringify(updated));
+
+    try {
+      await fetch(`/api/bookmarks/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      console.warn("Failed to delete bookmark from PostgreSQL:", err);
+    }
   };
 
   const isBookmarked = (topic: string, title: string, category: CategoryType) => {
