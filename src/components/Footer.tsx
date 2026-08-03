@@ -11,7 +11,7 @@ export const Footer: React.FC = () => {
           </div>
           <div>
             <div className="font-bold text-sm text-slate-900 dark:text-white">
-              Project Atlas Knowledge Explorer
+              Bifrost AI Engine
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Categorized, lazy-loaded human knowledge discovery engine.

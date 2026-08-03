@@ -1,6 +1,6 @@
 {
-  "name": "Project Atlas",
-  "description": "An intelligent knowledge explorer that organizes search topics into lazy-loaded categories, research papers, interactive roadmaps, software, media, and knowledge graphs.",
+  "name": "Bifrost AI Engine",
+  "description": "An intelligent knowledge engine that organizes search topics into lazy-loaded categories, research papers, interactive roadmaps, software, media, and knowledge graphs.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

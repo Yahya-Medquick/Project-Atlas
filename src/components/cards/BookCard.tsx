@@ -49,7 +49,7 @@ export const BookCard: React.FC<BookCardProps> = ({
           </h3>
 
           <p className="text-xs text-slate-500 dark:text-slate-400 font-medium line-clamp-1">
-            {book.authors.join(", ")}
+            {Array.isArray(book.authors) ? book.authors.join(", ") : (book.authors || "Unknown Author")}
           </p>
 
           <p className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-2 pt-1 leading-normal">

@@ -1,17 +1,24 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { UserProfile } from "../types";
+import { UserAuth, UserProfile, TabUsage, CategoryType } from "../types";
+import { fetchCurrentUser, googleLogin, logoutUser, fetchTabUsage } from "../services/api";
 
 interface UserContextType {
+  user: UserAuth | null;
+  isLoggedIn: boolean;
+  isLoadingAuth: boolean;
   profile: UserProfile;
+  loginWithGoogle: (payload: { idToken?: string; credential?: string; email?: string; name?: string; avatarUrl?: string }) => Promise<void>;
+  logout: () => Promise<void>;
+  checkUsage: (tab: CategoryType) => Promise<TabUsage | null>;
   updateProfile: (updated: Partial<UserProfile>) => Promise<void>;
   updatePreferences: (prefs: Partial<UserProfile["preferences"]>) => Promise<void>;
 }
 
 const defaultProfile: UserProfile = {
-  name: "Alex Vance",
-  email: "doctordiet78f@gmail.com",
-  role: "Researcher",
-  savedSearches: ["Gravity", "Quantum Computing", "General Relativity"],
+  name: "Guest User",
+  email: "guest@bifrost.ai",
+  role: "Explorer",
+  savedSearches: [],
   recentSearches: [],
   preferences: {
     defaultSort: "relevance",
@@ -21,56 +28,78 @@ const defaultProfile: UserProfile = {
 };
 
 const UserContext = createContext<UserContextType>({
+  user: null,
+  isLoggedIn: false,
+  isLoadingAuth: true,
   profile: defaultProfile,
+  loginWithGoogle: async () => {},
+  logout: async () => {},
+  checkUsage: async () => null,
   updateProfile: async () => {},
   updatePreferences: async () => {},
 });
 
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [profile, setProfile] = useState<UserProfile>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("atlas_user_profile");
-        return saved ? JSON.parse(saved) : defaultProfile;
-      } catch (e) {
-        return defaultProfile;
-      }
-    }
-    return defaultProfile;
-  });
+  const [user, setUser] = useState<UserAuth | null>(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [profile, setProfile] = useState<UserProfile>(defaultProfile);
 
   useEffect(() => {
     async function loadUserSession() {
       try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.user) {
-            setProfile(data.user);
-            localStorage.setItem("atlas_user_profile", JSON.stringify(data.user));
-          }
+        const authUser = await fetchCurrentUser();
+        if (authUser) {
+          setUser(authUser);
+          setProfile((prev) => ({
+            ...prev,
+            name: authUser.name || prev.name,
+            email: authUser.email || prev.email,
+          }));
+        } else {
+          setUser(null);
         }
       } catch (err) {
-        console.warn("User session sync warning:", err);
+        console.warn("User session load error:", err);
+      } finally {
+        setIsLoadingAuth(false);
       }
     }
     loadUserSession();
   }, []);
 
+  const loginWithGoogle = async (payload: { idToken?: string; credential?: string; email?: string; name?: string; avatarUrl?: string }) => {
+    try {
+      const res = await googleLogin(payload);
+      if (res.user) {
+        setUser(res.user);
+        setProfile((prev) => ({
+          ...prev,
+          name: res.user.name,
+          email: res.user.email,
+        }));
+      }
+    } catch (err) {
+      console.error("Login with Google failed:", err);
+      throw err;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await logoutUser();
+      setUser(null);
+    } catch (err) {
+      console.warn("Logout error:", err);
+    }
+  };
+
+  const checkUsage = async (tab: CategoryType): Promise<TabUsage | null> => {
+    return await fetchTabUsage(tab);
+  };
+
   const updateProfile = async (updated: Partial<UserProfile>) => {
     const next = { ...profile, ...updated };
     setProfile(next);
-    localStorage.setItem("atlas_user_profile", JSON.stringify(next));
-
-    try {
-      await fetch("/api/auth/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
-      });
-    } catch (err) {
-      console.warn("Failed to persist user profile:", err);
-    }
   };
 
   const updatePreferences = async (prefs: Partial<UserProfile["preferences"]>) => {
@@ -82,21 +111,22 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       },
     };
     setProfile(next);
-    localStorage.setItem("atlas_user_profile", JSON.stringify(next));
-
-    try {
-      await fetch("/api/auth/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
-      });
-    } catch (err) {
-      console.warn("Failed to persist user preferences:", err);
-    }
   };
 
   return (
-    <UserContext.Provider value={{ profile, updateProfile, updatePreferences }}>
+    <UserContext.Provider
+      value={{
+        user,
+        isLoggedIn: !!user,
+        isLoadingAuth,
+        profile,
+        loginWithGoogle,
+        logout,
+        checkUsage,
+        updateProfile,
+        updatePreferences,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );

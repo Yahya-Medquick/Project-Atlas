@@ -38,11 +38,11 @@ export const CommunityCard: React.FC<CommunityCardProps> = ({
         <div className="flex items-center gap-3 text-slate-500 font-semibold text-xs">
           <span className="flex items-center gap-1 text-orange-500">
             <ThumbsUp className="w-3.5 h-3.5" />
-            {discussion.score.toLocaleString()}
+            {(discussion.score ?? 0).toLocaleString()}
           </span>
           <span className="flex items-center gap-1">
             <MessageSquare className="w-3.5 h-3.5" />
-            {discussion.commentsCount} comments
+            {discussion.commentsCount ?? 0} comments
           </span>
         </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { CategoryApiResponse, CategoryType } from "../types";
-import { fetchCategoryData } from "../services/api";
+import { fetchCategoryData, invalidateCache } from "../services/api";
 
 export function useCategoryData(topic: string, activeCategory: CategoryType) {
   const [data, setData] = useState<CategoryApiResponse | null>(null);
@@ -9,6 +9,13 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+
+  // Auto-reload state for failed tab loads
+  const [isAutoRetrying, setIsAutoRetrying] = useState(false);
+  const [retryCountdown, setRetryCountdown] = useState(0);
+  const autoRetryCountRef = useRef(0);
+  const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Track the current active request to prevent race conditions when tabs switch quickly
   const lastRequestRef = useRef<{ topic: string; category: CategoryType; page: number }>({
@@ -19,10 +26,27 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Reset and load first page on category or topic change
+  const clearAutoRetryTimers = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setIsAutoRetrying(false);
+    setRetryCountdown(0);
+  }, []);
+
   const loadCategory = useCallback(
-    async (pageNum = 1, append = false) => {
-      if (!topic) return;
+    async (pageNum = 1, append = false, isRetryAttempt = false) => {
+      if (!topic || activeCategory === "history") {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+        setError(null);
+        return;
+      }
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -40,7 +64,7 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
       }
 
       try {
-        const response = await fetchCategoryData(topic, activeCategory, pageNum, 10, false, controller.signal);
+        const response = await fetchCategoryData(topic, activeCategory, pageNum, 10, isRetryAttempt, controller.signal);
 
         // Verify request is still relevant
         if (
@@ -62,13 +86,42 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
 
         setPage(pageNum);
         setHasMore(response.pagination?.hasMore || false);
+        setError(null);
+        autoRetryCountRef.current = 0; // Reset retry counter on success
+        clearAutoRetryTimers();
       } catch (err: any) {
         if (err.name === "AbortError") return;
+
         if (
           lastRequestRef.current.topic.toLowerCase() === topic.toLowerCase() &&
           lastRequestRef.current.category === activeCategory
         ) {
-          setError(err.message || `Failed to load ${activeCategory} data.`);
+          const errMsg = err.message || `Failed to load ${activeCategory} data.`;
+          setError(errMsg);
+
+          // Trigger auto-reload if under limit (max 3 auto-retries)
+          if (pageNum === 1 && autoRetryCountRef.current < 3) {
+            autoRetryCountRef.current += 1;
+            const currentAttempt = autoRetryCountRef.current;
+            setIsAutoRetrying(true);
+            setRetryCountdown(2);
+
+            let secondsLeft = 2;
+            countdownIntervalRef.current = setInterval(() => {
+              secondsLeft -= 1;
+              if (secondsLeft >= 0) {
+                setRetryCountdown(secondsLeft);
+              }
+            }, 1000);
+
+            retryTimerRef.current = setTimeout(() => {
+              clearAutoRetryTimers();
+              invalidateCache(topic, activeCategory);
+              loadCategory(1, false, true);
+            }, 2000);
+          } else {
+            clearAutoRetryTimers();
+          }
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -77,21 +130,24 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
         }
       }
     },
-    [topic, activeCategory]
+    [topic, activeCategory, clearAutoRetryTimers]
   );
 
   useEffect(() => {
+    clearAutoRetryTimers();
+    autoRetryCountRef.current = 0;
     setData(null);
     setPage(1);
     setHasMore(false);
     loadCategory(1, false);
 
     return () => {
+      clearAutoRetryTimers();
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, [topic, activeCategory, loadCategory]);
+  }, [topic, activeCategory, loadCategory, clearAutoRetryTimers]);
 
   const loadMore = useCallback(() => {
     if (!isLoadingMore && hasMore) {
@@ -99,13 +155,23 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
     }
   }, [isLoadingMore, hasMore, page, loadCategory]);
 
+  const manualRefetch = useCallback(() => {
+    clearAutoRetryTimers();
+    autoRetryCountRef.current = 0;
+    invalidateCache(topic, activeCategory);
+    loadCategory(1, false, true);
+  }, [topic, activeCategory, loadCategory, clearAutoRetryTimers]);
+
   return {
     data,
     isLoading,
     isLoadingMore,
     error,
+    isAutoRetrying,
+    retryCountdown,
+    autoRetryCount: autoRetryCountRef.current,
     hasMore,
     loadMore,
-    refetch: () => loadCategory(1, false),
+    refetch: manualRefetch,
   };
 }

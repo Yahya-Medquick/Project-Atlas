@@ -3,13 +3,42 @@ export type CategoryType =
   | 'education' 
   | 'news' 
   | 'software' 
-  | 'games' 
   | 'videos' 
   | 'books' 
   | 'research' 
   | 'communities' 
   | 'related'
-  | 'recommendations';
+  | 'recommendations'
+  | 'history';
+
+export interface UserAuth {
+  id: string;
+  google_id?: string;
+  email: string;
+  name: string;
+  avatar_url?: string;
+  tier: 'free' | 'logged_out' | 'paid';
+  created_at?: string;
+}
+
+export interface TabUsage {
+  tab: CategoryType;
+  count: number;
+  limit: number;
+  remaining: number;
+  resetInSeconds: number;
+}
+
+export interface HistoryItem {
+  id: string;
+  userId: string;
+  query: string;
+  category: CategoryType;
+  isPinned: boolean;
+  isStarred: boolean;
+  displayOrder: number;
+  createdAt: string;
+}
 
 export interface RecommendationItem {
   id: string;

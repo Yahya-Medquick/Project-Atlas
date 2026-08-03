@@ -68,7 +68,7 @@ export const DeveloperApiModal: React.FC<DeveloperApiModalProps> = ({ isOpen, on
       parameters: [],
       exampleResponse: `{
   "status": "healthy",
-  "engine": "Project Atlas Universal Knowledge Engine v2.5",
+  "engine": "Bifrost AI Universal Knowledge Engine v2.5",
   "memoryUsageMb": 42.1
 }`
     }
@@ -94,7 +94,7 @@ export const DeveloperApiModal: React.FC<DeveloperApiModalProps> = ({ isOpen, on
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                Project Atlas Public REST API v1
+                Bifrost AI Public REST API v1
               </h2>
               <p className="text-xs text-slate-500">Developer documentation, endpoints, and cURL snippets</p>
             </div>
@@ -109,13 +109,15 @@ export const DeveloperApiModal: React.FC<DeveloperApiModalProps> = ({ isOpen, on
         </div>
 
         {/* Info Banner */}
-        <div className="px-6 py-3 bg-indigo-50 dark:bg-indigo-950/50 border-b border-indigo-200 dark:border-indigo-800/60 text-xs text-indigo-900 dark:text-indigo-200 flex items-center justify-between">
+        <div className="px-6 py-3 bg-purple-50 dark:bg-purple-950/50 border-b border-purple-200 dark:border-purple-800/60 text-xs text-purple-900 dark:text-purple-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span>Rate Limit: <strong>150 requests / min</strong>. CORS enabled for cross-origin integration.</span>
+            <Terminal className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+            <span>
+              Authentication Required: Pass <code className="bg-purple-200/80 dark:bg-purple-900 px-1.5 py-0.5 rounded font-mono font-bold">Authorization: Bearer bifrost_live_...</code> on all <code className="font-mono">/api/v1/*</code> endpoints.
+            </span>
           </div>
-          <span className="font-mono text-[10px] bg-indigo-200 dark:bg-indigo-900 px-2 py-0.5 rounded font-bold">
-            v2.5.0
+          <span className="font-mono text-[10px] bg-purple-200 dark:bg-purple-900 px-2 py-0.5 rounded font-bold shrink-0">
+            v2.5.0 (API Key Protected)
           </span>
         </div>
 
@@ -132,7 +134,7 @@ export const DeveloperApiModal: React.FC<DeveloperApiModalProps> = ({ isOpen, on
                 </div>
 
                 <button
-                  onClick={() => handleCopy(`curl -X GET "${window.location.origin}${ep.path.replace("{question}", "What is gravity").replace("{topicA}", "gravity").replace("{topicB}", "quantum-computing").replace("{slug}", "gravity")}"`, ep.path)}
+                  onClick={() => handleCopy(`curl -H "Authorization: Bearer YOUR_API_KEY" -X GET "${window.location.origin}${ep.path.replace("{question}", "What is gravity").replace("{topicA}", "gravity").replace("{topicB}", "quantum-computing").replace("{slug}", "gravity")}"`, ep.path)}
                   className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition-colors flex items-center gap-1"
                 >
                   {copiedPath === ep.path ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}

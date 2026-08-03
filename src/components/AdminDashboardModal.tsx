@@ -14,6 +14,11 @@ import {
   CheckCircle2,
   ShieldCheck,
   TrendingUp,
+  Key,
+  Copy,
+  Check,
+  Ban,
+  UserCheck,
 } from "lucide-react";
 import { AdminStats, Entity } from "../types";
 
@@ -29,9 +34,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 }) => {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [entities, setEntities] = useState<Entity[]>([]);
+  const [apiKeys, setApiKeys] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "entities" | "cache">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "entities" | "cache" | "apikeys">("overview");
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+
+  // New API Key form state
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [dailyLimit, setDailyLimit] = useState(100);
+  const [rawCreatedKey, setRawCreatedKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   // New entity form state
   const [newTitle, setNewTitle] = useState("");
@@ -44,18 +57,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     return localStorage.getItem("admin_token") || "";
   });
 
-  const handleTokenChange = (token: string) => {
-    setAdminToken(token);
-    localStorage.setItem("admin_token", token);
-  };
-
   const fetchAdminData = async () => {
     setIsLoading(true);
     try {
       const authHeaders = { "X-Admin-Token": adminToken };
-      const [statsRes, entitiesRes] = await Promise.all([
+      const [statsRes, entitiesRes, keysRes] = await Promise.all([
         fetch("/api/admin/stats", { headers: authHeaders }),
         fetch("/api/admin/entities", { headers: authHeaders }),
+        fetch("/api/admin/apikeys", { headers: authHeaders }),
       ]);
 
       if (statsRes.ok) {
@@ -65,6 +74,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       if (entitiesRes.ok) {
         const entitiesData = await entitiesRes.json();
         setEntities(entitiesData.entities || []);
+      }
+      if (keysRes.ok) {
+        const keysData = await keysRes.json();
+        setApiKeys(keysData.keys || []);
       }
     } catch (err) {
       console.warn("Error fetching admin stats:", err);
@@ -138,7 +151,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       });
 
       if (res.ok) {
-        setRefreshMessage(`Entity "${newTitle}" registered in Project Atlas database!`);
+        setRefreshMessage(`Entity "${newTitle}" registered in Bifrost AI database!`);
         setNewTitle("");
         setNewSlug("");
         setNewDesc("");
@@ -148,6 +161,54 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       }
     } catch (err) {
       console.warn("Failed to create entity:", err);
+    }
+  };
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ownerName.trim() || !ownerEmail.trim()) return;
+
+    try {
+      const res = await fetch("/api/admin/apikeys", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Token": adminToken,
+        },
+        body: JSON.stringify({
+          owner_name: ownerName.trim(),
+          owner_email: ownerEmail.trim(),
+          daily_limit: dailyLimit,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setRawCreatedKey(data.rawKey);
+        setRefreshMessage(`API Key generated for ${ownerName.trim()}!`);
+        setOwnerName("");
+        setOwnerEmail("");
+        setDailyLimit(100);
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.warn("Failed to generate API key:", err);
+    }
+  };
+
+  const handleRevokeApiKey = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/apikeys/${id}/revoke`, {
+        method: "POST",
+        headers: { "X-Admin-Token": adminToken },
+      });
+      if (res.ok) {
+        setRefreshMessage("API key revoked successfully.");
+        fetchAdminData();
+        setTimeout(() => setRefreshMessage(null), 3000);
+      }
+    } catch (err) {
+      console.warn("Failed to revoke API key:", err);
     }
   };
 
@@ -165,7 +226,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                Project Atlas System Dashboard
+                Bifrost AI System Dashboard
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
                   <Activity className="w-3 h-3 animate-pulse" /> Node Cluster Active
                 </span>
@@ -229,6 +290,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           >
             <Zap className="w-4 h-4" />
             <span>Redis & Memory Cache</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("apikeys")}
+            className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === "apikeys"
+                ? "border-indigo-600 text-indigo-600 dark:text-indigo-400 font-semibold"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
+            }`}
+          >
+            <Key className="w-4 h-4 text-purple-500" />
+            <span>API Keys ({apiKeys.length})</span>
           </button>
         </div>
 
@@ -594,6 +666,182 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
                     {stats.memoryUsageMb} MB
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: API KEYS MANAGEMENT (Requirements #4 & #5) */}
+          {activeTab === "apikeys" && (
+            <div className="space-y-6">
+              {/* Newly Generated Raw Key Callout */}
+              {rawCreatedKey && (
+                <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border-2 border-amber-400 dark:border-amber-700 text-amber-900 dark:text-amber-200 space-y-3 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                      API Key Issued Successfully! Save it now.
+                    </span>
+                    <button
+                      onClick={() => setRawCreatedKey(null)}
+                      className="text-xs hover:underline text-amber-700 dark:text-amber-300"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  <p className="text-xs">
+                    This is the only time the full unhashed key will be displayed. It is securely hashed in the database.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={rawCreatedKey}
+                      className="flex-1 font-mono text-sm p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 font-bold select-all text-slate-900 dark:text-amber-300"
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(rawCreatedKey);
+                        setCopiedKey(true);
+                        setTimeout(() => setCopiedKey(false), 2000);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
+                    >
+                      {copiedKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedKey ? "Copied!" : "Copy Key"}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Issue New API Key Form */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Key className="w-4 h-4 text-purple-600" /> Issue New API Key
+                </h3>
+
+                <form onSubmit={handleCreateApiKey} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">Owner Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Sarah Connor"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">Owner Email</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="sarah@example.com"
+                      value={ownerEmail}
+                      onChange={(e) => setOwnerEmail(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">Daily Quota Limit</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10000"
+                      value={dailyLimit}
+                      onChange={(e) => setDailyLimit(parseInt(e.target.value, 10) || 100)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white font-mono"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      className="w-full py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                    >
+                      <Plus className="w-4 h-4" /> Issue Key
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Active API Keys Table */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                  <span>Issued Keys & Real-Time Usage ({apiKeys.length})</span>
+                  <span className="text-xs font-normal text-slate-400">Hashed via SHA-256</span>
+                </h3>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
+                        <th className="py-2.5 px-3">Prefix</th>
+                        <th className="py-2.5 px-3">Owner</th>
+                        <th className="py-2.5 px-3">Daily Quota</th>
+                        <th className="py-2.5 px-3">Today Requests</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {apiKeys.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                            No API keys generated yet. Issue one above to secure <code className="font-mono">/api/v1/*</code> endpoints.
+                          </td>
+                        </tr>
+                      ) : (
+                        apiKeys.map((k) => (
+                          <tr key={k.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/50">
+                            <td className="py-3 px-3 font-mono font-bold text-purple-600 dark:text-purple-400">
+                              {k.keyPrefix || "bifrost_live_..."}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-semibold text-slate-900 dark:text-white">{k.ownerName}</div>
+                              <div className="text-[10px] text-slate-400">{k.ownerEmail}</div>
+                            </td>
+                            <td className="py-3 px-3 font-mono">
+                              {k.dailyLimit} req/day
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] ${
+                                k.todayRequests >= k.dailyLimit
+                                  ? "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300"
+                                  : "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300"
+                              }`}>
+                                {k.todayRequests} / {k.dailyLimit}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              {k.revoked ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 text-[10px] font-bold">
+                                  <Ban className="w-3 h-3" /> Revoked
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
+                                  <UserCheck className="w-3 h-3" /> Active
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              {!k.revoked && (
+                                <button
+                                  onClick={() => handleRevokeApiKey(k.id)}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900 text-rose-600 dark:text-rose-400 text-[11px] font-bold transition-colors inline-flex items-center gap-1"
+                                >
+                                  <Ban className="w-3 h-3" /> Revoke
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

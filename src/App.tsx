@@ -10,10 +10,11 @@ import { CategoryTabs } from "./components/CategoryTabs";
 import { TopicHero } from "./components/TopicHero";
 import { CategoryViewer } from "./components/CategoryViewer";
 import { SidebarInsights } from "./components/SidebarInsights";
+import { GoogleLoginModal } from "./components/GoogleLoginModal";
 import { Footer } from "./components/Footer";
 import {
   Sparkles,
-  Gamepad2,
+  Network,
   GraduationCap,
   FileText,
 } from "lucide-react";
@@ -48,6 +49,7 @@ export default function App() {
   const [loadedCategories, setLoadedCategories] = useState<Set<CategoryType>>(new Set());
 
   // Modal States
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -110,8 +112,22 @@ export default function App() {
   // Sync URL search params and listen for popstate (browser back/forward navigation)
   useEffect(() => {
     const syncFromUrl = () => {
+      const pathname = window.location.pathname;
+      let qParam = "";
+      
+      if (pathname.startsWith("/topic/")) {
+        const slug = pathname.replace("/topic/", "").trim();
+        if (slug) {
+          qParam = decodeURIComponent(slug).replace(/-/g, " ");
+        }
+      }
+
+      if (!qParam) {
+        const params = new URLSearchParams(window.location.search);
+        qParam = params.get("q") || "";
+      }
+
       const params = new URLSearchParams(window.location.search);
-      const qParam = params.get("q") || "";
       const catParam = (params.get("cat") || "overview") as CategoryType;
 
       setQuery(qParam);
@@ -165,6 +181,9 @@ export default function App() {
     isLoading,
     isLoadingMore,
     error,
+    isAutoRetrying,
+    retryCountdown,
+    autoRetryCount,
     hasMore,
     loadMore,
     refetch,
@@ -208,6 +227,8 @@ export default function App() {
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
         onOpenApiDocs={() => setIsApiDocsOpen(true)}
+        onOpenLogin={() => setIsLoginOpen(true)}
+        onSelectCategory={handleSelectCategory}
         currentQuery={query}
       />
 
@@ -220,18 +241,18 @@ export default function App() {
             <div className="text-center space-y-6 max-w-3xl mx-auto">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/80 dark:border-indigo-800/80 text-xs font-semibold">
                 <Sparkles className="w-4 h-4 text-indigo-500" />
-                <span>Project Atlas Universal Knowledge Engine</span>
+                <span>Bifrost AI Engine</span>
               </div>
 
               <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.1]">
                 Knowledge, <br />
                 <span className="text-indigo-600 dark:text-indigo-400">
-                  Organized by Lightweight Entities.
+                  Organized by Bifrost AI.
                 </span>
               </h1>
 
               <p className="text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-                Explore lightweight keyword entities, synonym connections, AI synthesis, live OpenAlex research papers, GitHub codebases, and interactive physics sandboxes in clean minimalism.
+                Explore lightweight keyword entities, synonym connections, AI synthesis, live OpenAlex research papers, GitHub codebases, and interactive knowledge graphs in clean minimalism.
               </p>
 
               {/* Main Search Bar */}
@@ -256,13 +277,13 @@ export default function App() {
 
               <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-3">
                 <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                  <Gamepad2 className="w-5 h-5" />
+                  <Network className="w-5 h-5" />
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                  Interactive Physics Sandboxes
+                  Interactive Knowledge Graphs
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  HTML5 Canvas simulations letting you tune mass, field strength, drag, and velocity parameters live in your browser.
+                  Interactive node connections mapping related concepts, interdisciplinary subfields, and domain relationships live.
                 </p>
               </div>
 
@@ -306,6 +327,8 @@ export default function App() {
               activeCategory={activeCategory}
               onSelectCategory={handleSelectCategory}
               loadedCategories={loadedCategories}
+              currentTopic={query}
+              dataTrigger={data}
             />
 
             {/* Category Content + Entity Sidebar Layout */}
@@ -320,12 +343,16 @@ export default function App() {
                   isLoading={isLoading}
                   isLoadingMore={isLoadingMore}
                   error={error}
+                  isAutoRetrying={isAutoRetrying}
+                  retryCountdown={retryCountdown}
+                  autoRetryCount={autoRetryCount}
                   hasMore={hasMore}
                   onLoadMore={loadMore}
                   onRetry={refetch}
                   onBookmarkItem={handleBookmarkItem}
                   isBookmarkedItem={checkIsBookmarked}
                   onSelectTopic={handleSearch}
+                  onOpenLogin={() => setIsLoginOpen(true)}
                 />
               </div>
 
@@ -343,6 +370,12 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Google Login Modal */}
+      <GoogleLoginModal
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
+      />
 
       {/* Modals wrapped in Suspense for Lazy Loading */}
       <Suspense fallback={null}>

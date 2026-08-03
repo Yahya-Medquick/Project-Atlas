@@ -22,7 +22,7 @@ export const NewsCard: React.FC<NewsCardProps> = ({
           </span>
           <span className="flex items-center gap-1 text-slate-400">
             <Clock className="w-3.5 h-3.5" />
-            {new Date(article.publishedAt).toLocaleDateString()}
+            {article.publishedAt ? new Date(article.publishedAt).toLocaleDateString() : "Recent"}
           </span>
         </div>
 

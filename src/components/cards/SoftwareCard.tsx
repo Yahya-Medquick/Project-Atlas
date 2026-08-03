@@ -22,34 +22,34 @@ export const SoftwareCard: React.FC<SoftwareCardProps> = ({
             {repo.ownerAvatar ? (
               <img
                 src={repo.ownerAvatar}
-                alt={repo.name}
+                alt={repo.name || "Repo owner"}
                 className="w-6 h-6 rounded-full border border-slate-200 dark:border-slate-700"
               />
             ) : (
               <Code className="w-5 h-5 text-indigo-500" />
             )}
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[150px]">
-              {repo.fullName.split("/")[0]}
+              {(repo.fullName || repo.name || "").split("/")[0] || "repository"}
             </span>
           </div>
 
           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-            {repo.language}
+            {repo.language || "Code"}
           </span>
         </div>
 
         {/* Repo Name */}
         <h3 className="font-bold text-slate-900 dark:text-white text-base group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
-          {repo.name}
+          {repo.name || "Untitled Repository"}
         </h3>
 
         {/* Description */}
         <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-3 leading-relaxed">
-          {repo.description}
+          {repo.description || "No description provided."}
         </p>
 
         {/* Topics */}
-        {repo.topics && repo.topics.length > 0 && (
+        {Array.isArray(repo.topics) && repo.topics.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-1">
             {repo.topics.slice(0, 3).map((topic, idx) => (
               <span
@@ -68,11 +68,11 @@ export const SoftwareCard: React.FC<SoftwareCardProps> = ({
         <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300 font-semibold">
           <div className="flex items-center gap-1 text-amber-500">
             <Star className="w-4 h-4 fill-amber-500/20" />
-            <span>{repo.stars.toLocaleString()}</span>
+            <span>{(repo.stars ?? 0).toLocaleString()}</span>
           </div>
           <div className="flex items-center gap-1 text-slate-500">
             <GitFork className="w-3.5 h-3.5" />
-            <span>{repo.forks.toLocaleString()}</span>
+            <span>{(repo.forks ?? 0).toLocaleString()}</span>
           </div>
         </div>
 
