@@ -3190,6 +3190,7 @@ function getIndexHtmlTemplate(): string {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google-site-verification" content="DJw3CA-qjN0OAufoAUbl0Woh_g4weJrlEaPwV6T00BM" />
     <title>Bifrost AI Engine | Universal Knowledge Explorer</title>
   </head>
   <body>
