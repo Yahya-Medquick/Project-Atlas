@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { X, ArrowLeftRight, CheckCircle2, Sparkles, Scale, RefreshCw } from "lucide-react";
 import { EntityComparison } from "../types";
+import { getAuthHeaders } from "../services/api";
 
 interface TopicCompareModalProps {
   isOpen: boolean;
@@ -24,7 +25,10 @@ export const TopicCompareModal: React.FC<TopicCompareModalProps> = ({
     if (!topicA || !topicB) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/compare?a=${encodeURIComponent(topicA)}&b=${encodeURIComponent(topicB)}`);
+      const res = await fetch(`/api/compare?a=${encodeURIComponent(topicA)}&b=${encodeURIComponent(topicB)}`, {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
       if (res.ok) {
         const json = await res.json();
         setData(json.comparison);

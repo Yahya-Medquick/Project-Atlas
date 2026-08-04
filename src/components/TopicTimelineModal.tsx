@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { X, History, Sparkles, Milestone, ExternalLink, RefreshCw } from "lucide-react";
 import { TopicTimelineEvent } from "../types";
+import { getAuthHeaders } from "../services/api";
 
 interface TopicTimelineModalProps {
   isOpen: boolean;
@@ -15,7 +16,10 @@ export const TopicTimelineModal: React.FC<TopicTimelineModalProps> = ({ isOpen, 
   useEffect(() => {
     if (isOpen && topic) {
       setLoading(true);
-      fetch(`/api/v1/timeline?topic=${encodeURIComponent(topic)}`)
+      fetch(`/api/timeline?topic=${encodeURIComponent(topic)}`, {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      })
         .then((res) => res.json())
         .then((data) => {
           setTimeline(data.timeline || []);

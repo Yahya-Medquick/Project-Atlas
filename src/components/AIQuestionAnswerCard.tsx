@@ -1,6 +1,7 @@
-import React, { useState } from "react";
-import { Sparkles, Send, HelpCircle, ExternalLink, RefreshCw, CheckCircle2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Sparkles, Send, HelpCircle, ExternalLink, RefreshCw, CheckCircle2, Activity } from "lucide-react";
 import { AIQuestionAnswer } from "../types";
+import { getAuthHeaders, fetchTabUsage } from "../services/api";
 
 interface AIQuestionAnswerCardProps {
   topic: string;
@@ -11,6 +12,20 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AIQuestionAnswer | null>(null);
+  const [usageInfo, setUsageInfo] = useState<{ count: number; limit: number; loggedIn: boolean } | null>(null);
+
+  const loadUsage = async () => {
+    try {
+      const data = await fetchTabUsage("qa" as any);
+      setUsageInfo(data);
+    } catch (e) {
+      console.warn("Failed to load QA usage", e);
+    }
+  };
+
+  useEffect(() => {
+    loadUsage();
+  }, []);
 
   const handleAsk = async (qToAsk?: string) => {
     const q = (qToAsk || question).trim();
@@ -19,13 +34,18 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/ask?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/ask?q=${encodeURIComponent(q)}`, {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
       if (res.ok) {
         const data = await res.json();
         setResult(data);
+        loadUsage();
       } else {
         const errData = await res.json().catch(() => ({}));
         setError(errData.message || "Unable to synthesize answer at this moment.");
+        loadUsage();
       }
     } catch (err: any) {
       console.warn("AI Q&A error:", err);
@@ -37,7 +57,7 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
 
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
             <Sparkles className="w-4 h-4" />
@@ -52,6 +72,22 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
             <p className="text-[11px] text-slate-500">Ask natural language questions about {topic}</p>
           </div>
         </div>
+
+        {/* Real-time Usage Indicator for Q&A */}
+        {usageInfo && usageInfo.loggedIn && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200/80 dark:border-indigo-800 text-[11px] text-indigo-800 dark:text-indigo-300 font-medium">
+            <Activity className="w-3 h-3 text-indigo-600 dark:text-indigo-400 animate-pulse shrink-0" />
+            <span>
+              {usageInfo.limit >= 1000 ? (
+                <strong className="font-bold">Unlimited Syntheses Today</strong>
+              ) : (
+                <>
+                  <strong className="font-bold">{usageInfo.count} of {usageInfo.limit}</strong> Q&A syntheses used today
+                </>
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Input form */}
