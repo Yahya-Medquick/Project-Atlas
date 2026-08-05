@@ -8,7 +8,7 @@ import "./index.css";
 
 const googleClientId =
   (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
-  "237075000954-bifrost.apps.googleusercontent.com";
+  "863164045495-rjdd6sp0f71vnu6sug34vtoqretbvnlb.apps.googleusercontent.com";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

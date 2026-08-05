@@ -19,6 +19,7 @@ import {
   Check,
   Ban,
   UserCheck,
+  Lock,
 } from "lucide-react";
 import { AdminStats, Entity } from "../types";
 
@@ -39,6 +40,12 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [activeTab, setActiveTab] = useState<"overview" | "entities" | "cache" | "apikeys">("overview");
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
+  // Password Protection State
+  const [passwordInput, setPasswordInput] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+
   // New API Key form state
   const [ownerName, setOwnerName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
@@ -57,19 +64,32 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     return localStorage.getItem("admin_token") || "";
   });
 
-  const fetchAdminData = async () => {
+  const fetchAdminData = async (tokenToUse?: string) => {
+    const activeAdminToken = tokenToUse !== undefined ? tokenToUse : adminToken;
+    if (!activeAdminToken) {
+      setIsUnlocked(false);
+      return;
+    }
     setIsLoading(true);
     try {
-      const authHeaders = { "X-Admin-Token": adminToken };
+      const authHeaders = { "X-Admin-Token": activeAdminToken };
       const [statsRes, entitiesRes, keysRes] = await Promise.all([
         fetch("/api/admin/stats", { headers: authHeaders }),
         fetch("/api/admin/entities", { headers: authHeaders }),
         fetch("/api/admin/apikeys", { headers: authHeaders }),
       ]);
 
+      if (statsRes.status === 401) {
+        setIsUnlocked(false);
+        localStorage.removeItem("admin_token");
+        setAdminToken("");
+        return;
+      }
+
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         setStats(statsData);
+        setIsUnlocked(true);
       }
       if (entitiesRes.ok) {
         const entitiesData = await entitiesRes.json();
@@ -88,9 +108,53 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      fetchAdminData();
+      if (adminToken) {
+        fetchAdminData(adminToken);
+      } else {
+        setIsUnlocked(false);
+      }
     }
-  }, [isOpen, adminToken]);
+  }, [isOpen]);
+
+  const handleUnlockAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordInput.trim()) return;
+    setIsVerifying(true);
+    setAuthError(null);
+
+    try {
+      const res = await fetch("/api/admin/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: passwordInput.trim() }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const validToken = data.token;
+        setAdminToken(validToken);
+        localStorage.setItem("admin_token", validToken);
+        setIsUnlocked(true);
+        setPasswordInput("");
+        fetchAdminData(validToken);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setAuthError(errData.error || "Incorrect admin password.");
+      }
+    } catch (err: any) {
+      setAuthError("Failed to connect to authentication server.");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleLockAdmin = () => {
+    localStorage.removeItem("admin_token");
+    setAdminToken("");
+    setIsUnlocked(false);
+    setPasswordInput("");
+    setAuthError(null);
+  };
 
   const handleClearCache = async () => {
     try {
@@ -214,6 +278,84 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   if (!isOpen) return null;
 
+  if (!isUnlocked) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-md p-6 relative overflow-hidden text-slate-800 dark:text-slate-100 space-y-5">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          <div className="flex flex-col items-center text-center space-y-2 pt-2">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-lg shadow-indigo-500/10">
+              <Lock className="w-7 h-7" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Admin Panel Locked</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs">
+              This panel is restricted to system administrators. Enter your master administrative password to continue.
+            </p>
+          </div>
+
+          <form onSubmit={handleUnlockAdmin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Master Admin Password
+              </label>
+              <div className="relative">
+                <input
+                  type="password"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="Enter admin password..."
+                  autoFocus
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                />
+                <Key className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
+              </div>
+            </div>
+
+            {authError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-400 font-medium">
+                {authError}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isVerifying || !passwordInput.trim()}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/20"
+              >
+                {isVerifying ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Verifying...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Unlock Dashboard</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden text-slate-800 dark:text-slate-100">
@@ -239,14 +381,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={fetchAdminData}
+              onClick={() => fetchAdminData()}
               disabled={isLoading}
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-xs font-medium flex items-center gap-1.5"
+              className="p-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-xs font-medium flex items-center gap-1.5"
               title="Refresh Data"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
               <span>Refresh</span>
             </button>
+
+            <button
+              onClick={handleLockAdmin}
+              className="px-3 py-2 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors text-xs font-semibold flex items-center gap-1.5"
+              title="Lock Admin Panel"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Lock Panel</span>
+            </button>
+
             <button
               onClick={onClose}
               className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"

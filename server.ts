@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import path from "path";
+import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -24,6 +25,10 @@ if (process.env.DATABASE_URL || process.env.POSTGRES_URL) {
     dbPool = new Pool({
       connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL,
       ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 5000,
+    });
+    dbPool.on("error", (err) => {
+      console.warn("[DB] Pool background error:", err.message);
     });
   } catch (err) {
     console.warn("PostgreSQL connection pool initialization warning:", err);
@@ -176,8 +181,12 @@ async function initDatabaseSchema() {
     `);
 
     console.log("[DB] PostgreSQL database tables initialized and verified successfully!");
-  } catch (err) {
-    console.error("[DB] Critical error initializing PostgreSQL schema:", err);
+  } catch (err: any) {
+    console.warn("[DB] PostgreSQL connection failed or unreachable. Gracefully switching to in-memory store:", err?.message || err);
+    try {
+      await dbPool.end();
+    } catch (_) {}
+    dbPool = null;
   }
 }
 
@@ -187,7 +196,8 @@ if (dbPool) {
 
 // Session secret & OAuth2 client
 const SESSION_SECRET = process.env.SESSION_SECRET || "bifrost_ai_engine_secret_session_key_2026";
-const googleOAuthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || "");
+const DEFAULT_GOOGLE_CLIENT_ID = "863164045495-rjdd6sp0f71vnu6sug34vtoqretbvnlb.apps.googleusercontent.com";
+const googleOAuthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID);
 
 // In-memory fallback structures for development
 let inMemoryBookmarks: any[] = [];
@@ -754,23 +764,30 @@ app.use("/api/admin/", adminRateLimiter);
 
 // Security: Admin Route Authorization Middleware
 function adminAuthMiddleware(req: Request, res: Response, next: NextFunction) {
-  if (req.method === "GET") {
+  if (req.path === "/verify") {
     return next();
   }
   const token = (req.headers["x-admin-token"] as string) || (req.headers.authorization as string);
-  const expectedToken = process.env.ADMIN_TOKEN || "";
+  const expectedToken = process.env.ADMIN_TOKEN || "Yahya@1122";
 
-  if (expectedToken) {
-    if (!token || (token !== expectedToken && token !== `Bearer ${expectedToken}`)) {
-      return res.status(401).json({ error: "Unauthorized: Invalid or missing administrative authorization token." });
-    }
-  } else if (process.env.NODE_ENV === "production") {
-    return res.status(401).json({ error: "Unauthorized: ADMIN_TOKEN is not configured on server." });
+  if (!token || (token !== expectedToken && token !== `Bearer ${expectedToken}`)) {
+    return res.status(401).json({ error: "Unauthorized: Invalid or missing administrative authorization token." });
   }
   next();
 }
 
 app.use("/api/admin", adminAuthMiddleware);
+
+// Admin Password Verification Endpoint
+app.post("/api/admin/verify", (req: Request, res: Response) => {
+  const { password } = req.body || {};
+  const expectedToken = process.env.ADMIN_TOKEN || "Yahya@1122";
+
+  if (password && (password === expectedToken || `Bearer ${password}` === expectedToken)) {
+    return res.json({ success: true, token: expectedToken, message: "Admin authenticated successfully." });
+  }
+  return res.status(401).json({ error: "Invalid administrative password. Access denied." });
+});
 
 // Timeline Data Map for Key Science/Tech Topics
 const TOPIC_TIMELINES: Record<string, Array<{ year: string; title: string; description: string; keyFigure: string; impact: "low" | "medium" | "high" | "breakthrough" }>> = {
@@ -1245,7 +1262,7 @@ app.post("/api/auth/google", async (req: Request, res: Response) => {
       try {
         const ticket = await googleOAuthClient.verifyIdToken({
           idToken: tokenToVerify,
-          audience: process.env.GOOGLE_CLIENT_ID || undefined,
+          audience: process.env.GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID,
         });
         const payload = ticket.getPayload();
         if (payload) {
