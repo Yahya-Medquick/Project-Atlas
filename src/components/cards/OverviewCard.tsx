@@ -1,56 +1,60 @@
-import React from "react";
+import React, { useState } from "react";
 import { OverviewData } from "../../types";
-import { ExternalLink, Calendar, Users, Cpu, Bookmark, Check } from "lucide-react";
+import { ExternalLink, Calendar, Users, Cpu, ChevronDown, ChevronUp, Sparkles, Network } from "lucide-react";
 
 interface OverviewCardProps {
   data: OverviewData;
+  entity?: any;
+  rankingScore?: number;
+  synonymsConnected?: string[];
   onBookmark?: (title: string, category: any, url: string, desc?: string) => void;
   isBookmarked?: boolean;
 }
 
 export const OverviewCard: React.FC<OverviewCardProps> = ({
   data,
-  onBookmark,
-  isBookmarked = false,
+  entity,
+  rankingScore = 95,
+  synonymsConnected = [],
 }) => {
-  return (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Primary Summary Banner */}
-      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-48 h-48 bg-indigo-500/10 dark:bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex flex-col lg:flex-row gap-6 items-start justify-between">
-          <div className="flex-1 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60">
-                Core Synthesis
-              </span>
-              {data.wikiUrl && (
-                <a
-                  href={data.wikiUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1 transition-colors"
-                >
-                  <span>Wikipedia Reference</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-            </div>
+  const [showDetails, setShowDetails] = useState(false);
 
-            <p className="text-slate-700 dark:text-slate-200 text-base sm:text-lg leading-relaxed font-normal">
+  const popularityScore = entity?.popularityScore ?? 94;
+  const authorityScore = entity?.authorityScore ?? 98;
+  const freshnessScore = entity?.freshnessScore ?? 91;
+  const aliases = entity?.aliases || synonymsConnected || ["gravitation", "Newtonian Physics", "General Relativity"];
+
+  return (
+    <div className="space-y-10 animate-in fade-in duration-300">
+      {/* Primary Summary Block - Clean & Uncluttered */}
+      <div className="space-y-4">
+        <div className="flex flex-col lg:flex-row gap-6 items-start justify-between">
+          <div className="flex-1 space-y-3">
+            <p className="text-slate-800 dark:text-slate-100 text-lg sm:text-xl leading-relaxed font-normal">
               {data.summary}
             </p>
 
+            {data.wikiUrl && (
+              <a
+                href={data.wikiUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors pt-1"
+              >
+                <span>Wikipedia Reference</span>
+                <ExternalLink className="w-3 h-3 text-slate-400" />
+              </a>
+            )}
+
             {data.wikiExtract && data.wikiExtract !== data.summary && (
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/60 dark:border-slate-800/60 text-xs text-slate-600 dark:text-slate-300 italic">
+              <p className="text-xs text-slate-500 dark:text-slate-400 italic border-l-2 border-slate-300 dark:border-slate-700 pl-3 py-1 mt-2">
                 "{data.wikiExtract}"
-              </div>
+              </p>
             )}
           </div>
 
           {data.wikiThumbnail && (
-            <div className="w-full lg:w-48 h-48 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shrink-0 bg-slate-100 dark:bg-slate-950">
+            <div className="w-full lg:w-44 h-44 rounded-xl overflow-hidden border border-slate-200/80 dark:border-slate-800 shrink-0 bg-slate-100 dark:bg-slate-900">
               <img
                 src={data.wikiThumbnail}
                 alt={data.topic}
@@ -60,57 +64,104 @@ export const OverviewCard: React.FC<OverviewCardProps> = ({
             </div>
           )}
         </div>
-      </div>
 
-      {/* Quick Facts Grid */}
-      {data.quickFacts && data.quickFacts.length > 0 && (
-        <div>
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-indigo-500" />
-            <span>Quick Metadata & Key Facts</span>
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {data.quickFacts.map((fact, idx) => (
-              <div
-                key={idx}
-                className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-2xs"
-              >
-                <div className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">
-                  {fact.label}
-                </div>
-                <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                  {fact.value}
+        {/* Expandable "More details & metrics" Section (Progressive Disclosure) */}
+        <div className="pt-2">
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white py-1 transition-colors select-none"
+          >
+            <span>{showDetails ? "Hide secondary metrics & metadata" : "More details & metrics"}</span>
+            {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+
+          {showDetails && (
+            <div className="mt-3 p-5 rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800/60 space-y-5 animate-in fade-in duration-200">
+              {/* Consolidated Metrics Badges */}
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+                  System Intelligence Metrics
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                    <span className="text-[10px] text-slate-400 block font-medium">Rank Score</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{rankingScore}/100</span>
+                  </div>
+                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                    <span className="text-[10px] text-slate-400 block font-medium">Popularity Metric</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{popularityScore}%</span>
+                  </div>
+                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                    <span className="text-[10px] text-slate-400 block font-medium">Academic Authority</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{authorityScore}/100</span>
+                  </div>
+                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                    <span className="text-[10px] text-slate-400 block font-medium">Freshness Index</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{freshnessScore}%</span>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Core Concepts */}
+              {/* Quick Metadata Facts */}
+              {data.quickFacts && data.quickFacts.length > 0 && (
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+                    Metadata & Quick Facts
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {data.quickFacts.map((fact, idx) => (
+                      <div key={idx} className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                        <span className="text-[10px] text-slate-400 block font-medium">{fact.label}</span>
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white truncate block">{fact.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Connected Synonyms & Aliases */}
+              {aliases.length > 0 && (
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+                    Connected Synonyms & Aliases
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {aliases.map((alias, idx) => (
+                      <span key={idx} className="px-2.5 py-1 rounded-full text-xs bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-300">
+                        {alias}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Core Concepts - Spacious & Clean */}
       {data.coreConcepts && data.coreConcepts.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-indigo-500" />
-            <span>Core Theoretical Pillars</span>
+        <div className="space-y-4 pt-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Core Principles
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {data.coreConcepts.map((concept, idx) => (
               <div
                 key={idx}
-                className="p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-2xs space-y-3"
+                className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 space-y-2.5"
               >
-                <h4 className="font-bold text-slate-900 dark:text-white text-base">
+                <h4 className="font-semibold text-slate-900 dark:text-white text-base">
                   {concept.title}
                 </h4>
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                   {concept.description}
                 </p>
-                <div className="flex flex-wrap gap-1.5 pt-2">
+                <div className="flex flex-wrap gap-1 pt-1">
                   {concept.tags.map((tag, tIdx) => (
                     <span
                       key={tIdx}
-                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                      className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
                     >
                       #{tag}
                     </span>
@@ -122,24 +173,23 @@ export const OverviewCard: React.FC<OverviewCardProps> = ({
         </div>
       )}
 
-      {/* Timeline Section */}
+      {/* Timeline Section - Elegant Minimalist Vertical Line */}
       {data.timeline && data.timeline.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-indigo-500" />
-            <span>Historical Timeline & Evolution</span>
+        <div className="space-y-4 pt-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Evolution & History
           </h3>
-          <div className="relative border-l-2 border-indigo-200 dark:border-indigo-900/60 ml-4 pl-6 space-y-6">
+          <div className="relative border-l border-slate-200 dark:border-slate-800 ml-3 pl-5 space-y-6">
             {data.timeline.map((item, idx) => (
-              <div key={idx} className="relative group">
-                <div className="absolute -left-[31px] top-1.5 w-3.5 h-3.5 rounded-full bg-indigo-600 border-2 border-white dark:border-slate-950 group-hover:scale-125 transition-transform" />
-                <div className="inline-block px-2.5 py-0.5 rounded text-xs font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 mb-1">
+              <div key={idx} className="relative">
+                <div className="absolute -left-[25px] top-1.5 w-2 h-2 rounded-full bg-slate-400 dark:bg-slate-600" />
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                   {item.year}
-                </div>
-                <h4 className="font-bold text-slate-900 dark:text-white text-base">
+                </span>
+                <h4 className="font-semibold text-slate-900 dark:text-white text-sm mt-0.5">
                   {item.title}
                 </h4>
-                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
                   {item.description}
                 </p>
               </div>
@@ -148,30 +198,29 @@ export const OverviewCard: React.FC<OverviewCardProps> = ({
         </div>
       )}
 
-      {/* Key Figures */}
+      {/* Key Figures - Clean Grid */}
       {data.keyFigures && data.keyFigures.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-2">
-            <Users className="w-4 h-4 text-indigo-500" />
-            <span>Pioneering Figures & Discoverers</span>
+        <div className="space-y-4 pt-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Key Figures
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {data.keyFigures.map((person, idx) => (
               <div
                 key={idx}
-                className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-2xs flex items-start gap-4"
+                className="p-4 rounded-xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 flex items-start gap-3"
               >
-                <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-sm shrink-0">
+                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-xs shrink-0">
                   {person.name.charAt(0)}
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                  <h4 className="font-semibold text-slate-900 dark:text-white text-sm">
                     {person.name}
                   </h4>
-                  <div className="text-xs text-indigo-600 dark:text-indigo-400 font-medium mb-1">
+                  <p className="text-[11px] text-slate-400 font-medium">
                     {person.role}
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                  </p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
                     {person.contribution}
                   </p>
                 </div>

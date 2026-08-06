@@ -14,10 +14,10 @@ export const CommunityCard: React.FC<CommunityCardProps> = ({
   isBookmarked = false,
 }) => {
   return (
-    <div className="group rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 p-6 shadow-2xs hover:shadow-lg hover:border-indigo-500/40 dark:hover:border-indigo-500/40 transition-all duration-200 flex flex-col justify-between space-y-4">
+    <div className="group rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200 flex flex-col justify-between space-y-4">
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs">
-          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 dark:bg-orange-950/80 text-orange-600 dark:text-orange-400 border border-orange-200/50 dark:border-orange-800/50">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-orange-50 dark:bg-orange-950/80 text-orange-600 dark:text-orange-400">
             {discussion.communityName}
           </span>
           <span className="text-slate-400 text-[11px]">
@@ -25,22 +25,22 @@ export const CommunityCard: React.FC<CommunityCardProps> = ({
           </span>
         </div>
 
-        <h3 className="font-bold text-slate-900 dark:text-white text-base group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-2">
+        <h3 className="font-semibold text-slate-900 dark:text-white text-base group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors line-clamp-2">
           {discussion.title}
         </h3>
 
-        <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-3 leading-relaxed">
+        <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-3 leading-relaxed">
           {discussion.snippet}
         </p>
       </div>
 
-      <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-3 text-slate-500 font-semibold text-xs">
+      <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-3 text-slate-500 font-medium text-xs">
           <span className="flex items-center gap-1 text-orange-500">
             <ThumbsUp className="w-3.5 h-3.5" />
             {(discussion.score ?? 0).toLocaleString()}
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-slate-400">
             <MessageSquare className="w-3.5 h-3.5" />
             {discussion.commentsCount ?? 0} comments
           </span>
@@ -50,7 +50,7 @@ export const CommunityCard: React.FC<CommunityCardProps> = ({
           {onBookmark && (
             <button
               onClick={() => onBookmark(discussion)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               {isBookmarked ? (
                 <Check className="w-4 h-4 text-emerald-500" />
@@ -64,9 +64,9 @@ export const CommunityCard: React.FC<CommunityCardProps> = ({
             href={discussion.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white font-medium flex items-center gap-1 transition-colors"
+            className="px-3.5 py-1.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white font-medium flex items-center gap-1 transition-colors"
           >
-            <span>Join Thread</span>
+            <span>Thread</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>

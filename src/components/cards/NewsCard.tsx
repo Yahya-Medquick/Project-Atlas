@@ -14,10 +14,10 @@ export const NewsCard: React.FC<NewsCardProps> = ({
   isBookmarked = false,
 }) => {
   return (
-    <div className="group rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 p-6 shadow-2xs hover:shadow-lg hover:border-indigo-500/40 dark:hover:border-indigo-500/40 transition-all duration-200 flex flex-col justify-between space-y-4">
+    <div className="group rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200 flex flex-col justify-between space-y-4">
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs">
-          <span className="font-bold text-indigo-600 dark:text-indigo-400">
+          <span className="font-semibold text-slate-900 dark:text-slate-100">
             {article.source}
           </span>
           <span className="flex items-center gap-1 text-slate-400">
@@ -26,20 +26,20 @@ export const NewsCard: React.FC<NewsCardProps> = ({
           </span>
         </div>
 
-        <h3 className="font-bold text-slate-900 dark:text-white text-base group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-2">
+        <h3 className="font-semibold text-slate-900 dark:text-white text-base group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors line-clamp-2">
           {article.title}
         </h3>
 
-        <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-3 leading-relaxed">
+        <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-3 leading-relaxed">
           {article.description}
         </p>
       </div>
 
-      <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+      <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs">
         {onBookmark && (
           <button
             onClick={() => onBookmark(article)}
-            className="p-2 rounded-xl text-slate-500 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             {isBookmarked ? (
               <Check className="w-4 h-4 text-emerald-500" />
@@ -53,9 +53,9 @@ export const NewsCard: React.FC<NewsCardProps> = ({
           href={article.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="ml-auto px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1 shadow-xs transition-colors"
+          className="ml-auto px-3.5 py-1.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white font-medium flex items-center gap-1 transition-colors"
         >
-          <span>Read Full Story</span>
+          <span>Read Story</span>
           <ExternalLink className="w-3.5 h-3.5" />
         </a>
       </div>

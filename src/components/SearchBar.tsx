@@ -84,11 +84,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             e.preventDefault();
             handleSubmit(query);
           }}
-          className={`relative flex items-center bg-white dark:bg-slate-900 rounded-2xl border ${
+          className={`relative flex items-center bg-white dark:bg-slate-900 rounded-full border ${
             isOpen
-              ? "border-indigo-500 ring-4 ring-indigo-500/10 dark:ring-indigo-500/20"
+              ? "border-slate-400 dark:border-slate-600 shadow-md"
               : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
-          } shadow-lg shadow-slate-200/50 dark:shadow-none transition-all duration-200 overflow-hidden ${
+          } transition-all duration-200 overflow-hidden ${
             isCompact ? "p-1.5" : "p-2"
           }`}
         >
@@ -137,11 +137,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           <button
             type="submit"
             disabled={!query.trim()}
-            className={`rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-semibold flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
-              isCompact ? "px-3 py-2 text-xs" : "px-5 py-3 text-sm"
+            className={`rounded-full bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-medium flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
+              isCompact ? "px-3 py-1.5 text-xs" : "px-5 py-2.5 text-sm"
             }`}
           >
-            <span>Explore</span>
+            <span>Search</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>

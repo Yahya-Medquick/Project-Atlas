@@ -5,6 +5,7 @@ import { fetchCategoryData, invalidateCache } from "../services/api";
 export function useCategoryData(topic: string, activeCategory: CategoryType) {
   const [data, setData] = useState<CategoryApiResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [matchMode, setMatchMode] = useState<"all" | "any" | "phrase">("all");
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -64,7 +65,7 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
       }
 
       try {
-        const response = await fetchCategoryData(topic, activeCategory, pageNum, 10, isRetryAttempt, controller.signal);
+        const response = await fetchCategoryData(topic, activeCategory, pageNum, 10, isRetryAttempt, controller.signal, matchMode);
 
         // Verify request is still relevant
         if (
@@ -130,7 +131,7 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
         }
       }
     },
-    [topic, activeCategory, clearAutoRetryTimers]
+    [topic, activeCategory, clearAutoRetryTimers, matchMode]
   );
 
   useEffect(() => {
@@ -147,7 +148,7 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
         abortControllerRef.current.abort();
       }
     };
-  }, [topic, activeCategory, loadCategory, clearAutoRetryTimers]);
+  }, [topic, activeCategory, loadCategory, clearAutoRetryTimers, matchMode]);
 
   const loadMore = useCallback(() => {
     if (!isLoadingMore && hasMore) {
@@ -173,5 +174,7 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
     hasMore,
     loadMore,
     refetch: manualRefetch,
+    matchMode,
+    setMatchMode,
   };
 }

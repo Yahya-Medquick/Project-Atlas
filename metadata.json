@@ -1,6 +1,6 @@
 {
-  "name": "Bifrost AI Engine",
-  "description": "An intelligent knowledge engine that organizes search topics into lazy-loaded categories, research papers, interactive roadmaps, software, media, and knowledge graphs.",
+  "name": "Bifrost AI Knowledge Engine",
+  "description": "Full-stack AI-powered research and intelligence discovery engine featuring lazy-loaded knowledge nodes, interactive topic graphs, AI comparisons, historical timelines, and developer API controls.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

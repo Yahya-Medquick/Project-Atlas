@@ -34,7 +34,7 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/ask?q=${encodeURIComponent(q)}`, {
+      const res = await fetch(`/api/ask?q=${encodeURIComponent(q)}&topic=${encodeURIComponent(topic)}`, {
         credentials: "include",
         headers: { ...getAuthHeaders() },
       });
@@ -56,37 +56,20 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-4">
+    <div className="bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-              AI Synthesizer & Question Answering
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
-                Gemini 2.5 Active
-              </span>
-            </h3>
-            <p className="text-[11px] text-slate-500">Ask natural language questions about {topic}</p>
-          </div>
+          <Sparkles className="w-4 h-4 text-slate-400" />
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+            AI Assistant for "{topic}"
+          </span>
         </div>
 
         {/* Real-time Usage Indicator for Q&A */}
         {usageInfo && usageInfo.loggedIn && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200/80 dark:border-indigo-800 text-[11px] text-indigo-800 dark:text-indigo-300 font-medium">
-            <Activity className="w-3 h-3 text-indigo-600 dark:text-indigo-400 animate-pulse shrink-0" />
-            <span>
-              {usageInfo.limit >= 1000 ? (
-                <strong className="font-bold">Unlimited Syntheses Today</strong>
-              ) : (
-                <>
-                  <strong className="font-bold">{usageInfo.count} of {usageInfo.limit}</strong> Q&A syntheses used today
-                </>
-              )}
-            </span>
-          </div>
+          <span className="text-[11px] text-slate-400 font-medium">
+            {usageInfo.limit >= 1000 ? "Unlimited Syntheses" : `${usageInfo.count}/${usageInfo.limit} used today`}
+          </span>
         )}
       </div>
 
@@ -103,18 +86,18 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
             type="text"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder={`Ask anything about ${topic} (e.g. How does it work?)...`}
-            className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder={`Ask a question about ${topic}...`}
+            className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
           />
-          <HelpCircle className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          <HelpCircle className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
         </div>
         <button
           type="submit"
           disabled={loading || !question.trim()}
-          className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs transition-colors flex items-center gap-1.5 shrink-0"
+          className="px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white disabled:opacity-50 text-white dark:text-slate-900 font-medium text-xs transition-colors flex items-center gap-1.5 shrink-0"
         >
           {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-          <span>Synthesize</span>
+          <span>Ask</span>
         </button>
       </form>
 
@@ -134,6 +117,14 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
               <CheckCircle2 className="w-3 h-3" /> Confidence: {result.confidence}%
             </span>
           </div>
+
+          {/* Backup Model Transparency Indicator */}
+          {(result.backupNotice || result.isBackupModel) && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300 font-medium">
+              <Activity className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>{result.backupNotice || `Answered using backup model (${result.modelUsed}) due to high demand`}</span>
+            </div>
+          )}
 
           <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
             {result.answer}

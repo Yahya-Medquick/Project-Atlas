@@ -10,6 +10,7 @@ import { EducationCard } from "./cards/EducationCard";
 import { NewsCard } from "./cards/NewsCard";
 import { CommunityCard } from "./cards/CommunityCard";
 import { AIQuestionAnswerCard } from "./AIQuestionAnswerCard";
+import { MultiLevelDefinitionCard } from "./MultiLevelDefinitionCard";
 import { HistoryViewer } from "./HistoryViewer";
 import { AlertCircle, RefreshCw, ArrowDown, FolderOpen, Lock, LogIn, Clock, ShieldAlert } from "lucide-react";
 import { useUser } from "../context/UserContext";
@@ -29,12 +30,17 @@ interface CategoryViewerProps {
   retryCountdown?: number;
   autoRetryCount?: number;
   hasMore: boolean;
+  entity?: any;
+  rankingScore?: number;
+  synonymsConnected?: string[];
   onLoadMore: () => void;
   onRetry: () => void;
   onBookmarkItem: (item: any, category: CategoryType) => void;
   isBookmarkedItem: (title: string, category: CategoryType) => boolean;
   onSelectTopic: (topic: string) => void;
   onOpenLogin?: () => void;
+  matchMode?: 'all' | 'any' | 'phrase';
+  onMatchModeChange?: (mode: 'all' | 'any' | 'phrase') => void;
 }
 
 export const CategoryViewer: React.FC<CategoryViewerProps> = ({
@@ -48,12 +54,17 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
   retryCountdown = 0,
   autoRetryCount = 0,
   hasMore,
+  entity,
+  rankingScore,
+  synonymsConnected,
   onLoadMore,
   onRetry,
   onBookmarkItem,
   isBookmarkedItem,
   onSelectTopic,
   onOpenLogin,
+  matchMode = 'all',
+  onMatchModeChange,
 }) => {
   const { isLoggedIn } = useUser();
   const [resetTimer, setResetTimer] = useState<number>(86400);
@@ -237,7 +248,12 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
         <div className="space-y-6">
           <AIQuestionAnswerCard topic={topic} />
           {data.overviewData ? (
-            <OverviewCard data={data.overviewData} />
+            <OverviewCard
+              data={data.overviewData}
+              entity={entity}
+              rankingScore={rankingScore}
+              synonymsConnected={synonymsConnected}
+            />
           ) : (
             renderEmptyState("Overview")
           )}
@@ -247,7 +263,7 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
       {/* 2. EDUCATION */}
       {category === "education" && (
         data.educationData ? (
-          <EducationCard educationData={data.educationData} />
+          <EducationCard educationData={data.educationData} topic={topic} />
         ) : (
           renderEmptyState("Education Roadmap")
         )
@@ -255,20 +271,88 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
 
       {/* 3. RESEARCH PAPERS */}
       {category === "research" && (
-        data.items && data.items.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {data.items.map((paper: ResearchPaper, idx: number) => (
-              <PaperCard
-                key={paper.id ? `paper-${paper.id}-${idx}` : `paper-${idx}`}
-                paper={paper}
-                onBookmark={() => onBookmarkItem(paper, "research")}
-                isBookmarked={isBookmarkedItem(paper.title, "research")}
-              />
-            ))}
+        <div className="space-y-6">
+          {/* Filtering Control Panel */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-xs">
+            <div className="space-y-1">
+              <h4 className="text-xs font-bold text-slate-900 dark:text-white">Strict Keyword Filtering</h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Filter peer-reviewed papers by matching search term in title or abstract.</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">Mode:</span>
+              <div className="inline-flex rounded-xl p-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => onMatchModeChange?.('all')}
+                  className={`px-3 py-1 text-[11px] font-semibold rounded-lg transition-all cursor-pointer ${
+                    matchMode === 'all'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Require ALL Words
+                </button>
+                <button
+                  onClick={() => onMatchModeChange?.('any')}
+                  className={`px-3 py-1 text-[11px] font-semibold rounded-lg transition-all cursor-pointer ${
+                    matchMode === 'any'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Match ANY Word
+                </button>
+                <button
+                  onClick={() => onMatchModeChange?.('phrase')}
+                  className={`px-3 py-1 text-[11px] font-semibold rounded-lg transition-all cursor-pointer ${
+                    matchMode === 'phrase'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Exact Phrase
+                </button>
+              </div>
+            </div>
           </div>
-        ) : (
-          renderEmptyState("Research Papers")
-        )
+
+          {/* Fallback Warning Banner if needed */}
+          {data.filterInfo?.fallbackToBroad && (
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 text-amber-800 dark:text-amber-300">
+              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-xs font-bold">No papers found containing "{data.filterInfo.term}"</p>
+                <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 leading-relaxed">
+                  No matches found under the <strong>{matchMode === 'all' ? 'Require ALL words' : matchMode === 'any' ? 'Match ANY word' : 'Exact phrase'}</strong> criteria. Showing related scientific results for this topic instead.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Active Strict Match Indicator when successful */}
+          {!data.filterInfo?.fallbackToBroad && data.filterInfo && data.items && data.items.length > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <p className="text-[11px] font-medium">
+                Strictly showing <strong>{data.items.length}</strong> papers matching "{data.filterInfo.term}" (from {data.filterInfo.totalFetched} fetched papers).
+              </p>
+            </div>
+          )}
+
+          {data.items && data.items.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {data.items.map((paper: ResearchPaper, idx: number) => (
+                <PaperCard
+                  key={paper.id ? `paper-${paper.id}-${idx}` : `paper-${idx}`}
+                  paper={paper}
+                  onBookmark={() => onBookmarkItem(paper, "research")}
+                  isBookmarked={isBookmarkedItem(paper.title, "research")}
+                />
+              ))}
+            </div>
+          ) : (
+            renderEmptyState("Research Papers")
+          )}
+        </div>
       )}
 
       {/* 4. SOFTWARE */}

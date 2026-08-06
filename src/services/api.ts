@@ -226,9 +226,12 @@ export async function fetchCategoryData<T = any>(
   page = 1,
   limit = 10,
   forceRefresh = false,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  matchMode?: string
 ): Promise<CategoryApiResponse<T>> {
-  const cacheKey = `${category}:${topic.toLowerCase()}:p${page}:l${limit}`;
+  const cacheKey = category === "research" && matchMode
+    ? `${category}:${topic.toLowerCase()}:p${page}:l${limit}:m${matchMode}`
+    : `${category}:${topic.toLowerCase()}:p${page}:l${limit}`;
 
   if (!forceRefresh) {
     const cached = clientMemoryCache.get(cacheKey);
@@ -242,7 +245,9 @@ export async function fetchCategoryData<T = any>(
     return inFlightCategoryRequests.get(cacheKey) as Promise<CategoryApiResponse<T>>;
   }
 
-  const url = `/api/category/${category}?q=${encodeURIComponent(topic)}&page=${page}&limit=${limit}`;
+  const url = category === "research" && matchMode
+    ? `/api/category/${category}?q=${encodeURIComponent(topic)}&page=${page}&limit=${limit}&matchMode=${matchMode}`
+    : `/api/category/${category}?q=${encodeURIComponent(topic)}&page=${page}&limit=${limit}`;
 
   const requestPromise = (async () => {
     let attempts = 0;

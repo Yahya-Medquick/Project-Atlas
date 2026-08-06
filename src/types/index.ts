@@ -226,6 +226,14 @@ export interface CategoryApiResponse<T = any> {
   educationData?: EducationData;
   simulationData?: InteractiveSimulation;
   knowledgeGraph?: KnowledgeGraphData;
+  strictFiltered?: boolean;
+  filterInfo?: {
+    term: string;
+    mode: 'all' | 'any' | 'phrase';
+    strictCount: number;
+    totalFetched: number;
+    fallbackToBroad: boolean;
+  };
   pagination: {
     page: number;
     limit: number;
@@ -341,6 +349,9 @@ export interface AIQuestionAnswer {
   confidence: number;
   sources: Array<{ title: string; url: string }>;
   relatedFollowups: string[];
+  modelUsed?: string;
+  isBackupModel?: boolean;
+  backupNotice?: string;
 }
 
 export interface ContentQualityScore {

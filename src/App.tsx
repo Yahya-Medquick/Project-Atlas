@@ -187,6 +187,8 @@ export default function App() {
     hasMore,
     loadMore,
     refetch,
+    matchMode,
+    setMatchMode,
   } = useCategoryData(query, activeCategory);
 
   const handleBookmarkItem = (item: any, cat: CategoryType) => {
@@ -235,69 +237,21 @@ export default function App() {
       {/* Main Content Area */}
       <main id="main-content" className="flex-1">
         {!query ? (
-          /* HOMEPAGE LANDING VIEW - Clean Minimalism */
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20 space-y-16">
-            {/* Hero Banner */}
-            <div className="text-center space-y-6 max-w-3xl mx-auto">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/80 dark:border-indigo-800/80 text-xs font-semibold">
-                <Sparkles className="w-4 h-4 text-indigo-500" />
-                <span>Bifrost AI Engine</span>
-              </div>
-
-              <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.1]">
-                Knowledge, <br />
-                <span className="text-indigo-600 dark:text-indigo-400">
-                  Organized by Bifrost AI.
-                </span>
+          /* HOMEPAGE LANDING VIEW - Ultra-Minimalist & Direct */
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-20 md:py-32 flex flex-col items-center justify-center text-center space-y-8">
+            <div className="space-y-4">
+              <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                Explore <span className="text-indigo-600 dark:text-indigo-400">Knowledge</span>
               </h1>
 
-              <p className="text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-                Explore lightweight keyword entities, synonym connections, AI synthesis, live OpenAlex research papers, GitHub codebases, and interactive knowledge graphs in clean minimalism.
+              <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 max-w-xl mx-auto font-normal leading-relaxed">
+                Multi-source intelligence across research papers, codebases, AI synthesis, and interactive roadmaps.
               </p>
-
-              {/* Main Search Bar */}
-              <div className="pt-2">
-                <SearchBar onSearch={handleSearch} />
-              </div>
             </div>
 
-            {/* Feature Dimensions Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
-              <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                  Live Scholarly Research
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Real-time connection to OpenAlex's archive of peer-reviewed papers, citations, DOIs, and open-access PDFs.
-                </p>
-              </div>
-
-              <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                  <Network className="w-5 h-5" />
-                </div>
-                <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                  Interactive Knowledge Graphs
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Interactive node connections mapping related concepts, interdisciplinary subfields, and domain relationships live.
-                </p>
-              </div>
-
-              <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-                  <GraduationCap className="w-5 h-5" />
-                </div>
-                <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                  Educational Roadmaps & Quizzes
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Step-by-step beginner to advanced learning roadmaps with interactive self-assessment quizzes and open university lectures.
-                </p>
-              </div>
+            {/* Main Search Bar */}
+            <div className="w-full pt-2">
+              <SearchBar onSearch={handleSearch} />
             </div>
           </div>
         ) : (
@@ -347,12 +301,17 @@ export default function App() {
                   retryCountdown={retryCountdown}
                   autoRetryCount={autoRetryCount}
                   hasMore={hasMore}
+                  entity={currentEntity}
+                  rankingScore={rankingScore}
+                  synonymsConnected={synonymsConnected}
                   onLoadMore={loadMore}
                   onRetry={refetch}
                   onBookmarkItem={handleBookmarkItem}
                   isBookmarkedItem={checkIsBookmarked}
                   onSelectTopic={handleSearch}
                   onOpenLogin={() => setIsLoginOpen(true)}
+                  matchMode={matchMode}
+                  onMatchModeChange={setMatchMode}
                 />
               </div>
 

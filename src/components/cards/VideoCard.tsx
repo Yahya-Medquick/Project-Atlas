@@ -11,7 +11,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video }) => {
 
   return (
     <>
-      <div className="group rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 overflow-hidden shadow-2xs hover:shadow-lg transition-all duration-200 flex flex-col justify-between">
+      <div className="group rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 overflow-hidden hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200 flex flex-col justify-between">
         {/* Thumbnail with overlay play button */}
         <div
           onClick={() => setIsPlaying(true)}
@@ -20,40 +20,40 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video }) => {
           <img
             src={video.thumbnailUrl}
             alt={video.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90 group-hover:opacity-100"
+            className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
             referrerPolicy="no-referrer"
           />
-          <div className="absolute inset-0 bg-slate-950/30 group-hover:bg-slate-950/20 transition-colors flex items-center justify-center">
-            <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-              <Play className="w-5 h-5 fill-white ml-0.5" />
+          <div className="absolute inset-0 bg-slate-950/20 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-slate-900/80 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Play className="w-4 h-4 fill-white ml-0.5" />
             </div>
           </div>
 
           {video.duration && (
-            <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-slate-950/80 text-white text-[10px] font-bold">
+            <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-slate-950/80 text-white text-[10px] font-medium">
               {video.duration}
             </span>
           )}
         </div>
 
         {/* Video Info */}
-        <div className="p-5 space-y-2 flex-1 flex flex-col justify-between">
+        <div className="p-4 space-y-2 flex-1 flex flex-col justify-between">
           <div className="space-y-1">
-            <div className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+            <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
               {video.channelTitle}
             </div>
             <h3
               onClick={() => setIsPlaying(true)}
-              className="font-bold text-slate-900 dark:text-white text-sm line-clamp-2 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors"
+              className="font-semibold text-slate-900 dark:text-white text-sm line-clamp-2 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer transition-colors"
             >
               {video.title}
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 pt-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 pt-0.5">
               {video.description}
             </p>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-medium">
             <span className="flex items-center gap-1">
               <Eye className="w-3.5 h-3.5" />
               {video.views || "100K+ views"}
