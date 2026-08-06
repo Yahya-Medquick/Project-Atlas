@@ -2506,15 +2506,16 @@ Respond strictly with valid JSON conforming to this schema, without markdown for
     const aiClient = getGemini();
     if (aiClient) {
       try {
-        const embedRes = await aiClient.models.embedContent({
+        const embedRes: any = await aiClient.models.embedContent({
           model: "text-embedding-004",
           contents: queryStr,
           config: {
             outputDimensionality: 768
           }
         });
-        if (embedRes.embedding?.values) {
-          embeddingValues = embedRes.embedding.values;
+        const embeddingObj = embedRes.embedding || embedRes.embeddings;
+        if (embeddingObj?.values) {
+          embeddingValues = embeddingObj.values;
         }
       } catch (embedErr: any) {
         console.warn("[Gemini] Embedding generation notice:", embedErr.message);
@@ -3869,18 +3870,35 @@ Return valid JSON with format:
 
 // Centralized helper for public base URL resolution (handles custom domain env var PUBLIC_BASE_URL, APP_URL, or request headers)
 function getPublicBaseUrl(req?: Request): string {
+  let val = "";
   if (process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.trim() !== "") {
-    return process.env.PUBLIC_BASE_URL.trim().replace(/\/$/, "");
+    val = process.env.PUBLIC_BASE_URL.trim();
+  } else if (process.env.APP_URL && process.env.APP_URL.trim() !== "") {
+    val = process.env.APP_URL.trim();
   }
-  if (process.env.APP_URL && process.env.APP_URL.trim() !== "") {
-    return process.env.APP_URL.trim().replace(/\/$/, "");
+
+  // Strip accidental "PUBLIC_BASE_URL=" or "APP_URL=" key strings
+  if (val.startsWith("PUBLIC_BASE_URL=")) {
+    val = val.slice("PUBLIC_BASE_URL=".length).trim();
   }
+  if (val.startsWith("APP_URL=")) {
+    val = val.slice("APP_URL=".length).trim();
+  }
+
+  // Strip trailing slashes
+  val = val.replace(/\/+$/, "");
+
+  // If valid URL, return it
+  if (val && /^https?:\/\//i.test(val)) {
+    return val;
+  }
+
   if (req) {
     const host = req.get("x-forwarded-host") || req.get("host");
     const proto = req.get("x-forwarded-proto") || req.protocol || "https";
     if (host) return `${proto}://${host}`;
   }
-  return "http://localhost:3000";
+  return "https://bifrostai.up.railway.app";
 }
 
 // Helper functions for SEO Meta Injection
@@ -4134,31 +4152,40 @@ app.get("/topic/:slug", async (req: Request, res: Response) => {
 
 // Dynamic SEO Routes: robots.txt and sitemap.xml (Steps 3 & 4)
 app.get("/robots.txt", (_req: Request, res: Response) => {
-  res.type("text/plain");
+  res.setHeader("Content-Type", "text/plain");
   res.send(`User-agent: *
 Allow: /
-Sitemap: https://bifrostai.up.railway.app//sitemap.xml
+Sitemap: https://bifrostai.up.railway.app/sitemap.xml
 `);
 });
 
 app.get("/sitemap.xml", async (req: Request, res: Response) => {
-  res.type("application/xml");
+  res.setHeader("Content-Type", "application/xml");
   const baseUrl = getPublicBaseUrl(req);
 
   let searchUrls: string[] = [];
   if (dbPool) {
     try {
       const dbRes = await dbPool.query(
-        "SELECT slug, updated_at FROM searched_pages ORDER BY updated_at DESC LIMIT 1000"
+        "SELECT slug, updated_at, created_at FROM searched_pages ORDER BY updated_at DESC LIMIT 1000"
       );
-      searchUrls = dbRes.rows.map(
-        (r: any) => `  <url>
-    <loc>${baseUrl}/topic/${r.slug}</loc>
-    <lastmod>${new Date(r.updated_at || r.created_at || Date.now()).toISOString().split("T")[0]}</lastmod>
+      searchUrls = dbRes.rows.map((r: any) => {
+        const rawSlug = (r.slug || "").trim();
+        const urlEncodedSlug = encodeURIComponent(rawSlug);
+        const xmlEscapedSlug = escapeHtml(urlEncodedSlug);
+
+        const lastModDate = new Date(r.updated_at || r.created_at || Date.now());
+        const lastModStr = isNaN(lastModDate.getTime()) 
+          ? new Date().toISOString().split("T")[0] 
+          : lastModDate.toISOString().split("T")[0];
+
+        return `  <url>
+    <loc>${baseUrl}/topic/${xmlEscapedSlug}</loc>
+    <lastmod>${lastModStr}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
-  </url>`
-      );
+  </url>`;
+      });
     } catch (e) {
       console.warn("Error building sitemap from searched_pages:", e);
     }
