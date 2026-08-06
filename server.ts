@@ -186,6 +186,66 @@ async function initDatabaseSchema() {
       );
     `);
 
+    // 11. Searched Pages Table (with vector support for Gemini text embeddings)
+    try {
+      await dbPool.query('CREATE EXTENSION IF NOT EXISTS vector;');
+    } catch (e) {
+      console.warn("[DB] vector extension notice:", (e as any)?.message);
+    }
+
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS searched_pages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        slug TEXT UNIQUE NOT NULL,
+        query TEXT NOT NULL,
+        category TEXT NOT NULL,
+        summary_brief TEXT,
+        knowledge_matrix JSONB,
+        embedding VECTOR(768),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await dbPool.query(`
+      CREATE INDEX IF NOT EXISTS idx_searched_pages_slug ON searched_pages(slug);
+    `);
+
+    await dbPool.query(`
+      CREATE OR REPLACE FUNCTION match_searched_pages (
+        query_embedding VECTOR(768),
+        match_threshold FLOAT,
+        match_count INT
+      )
+      RETURNS TABLE (
+        id UUID,
+        slug TEXT,
+        query TEXT,
+        category TEXT,
+        summary_brief TEXT,
+        knowledge_matrix JSONB,
+        similarity FLOAT
+      )
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        RETURN QUERY
+        SELECT
+          searched_pages.id,
+          searched_pages.slug,
+          searched_pages.query,
+          searched_pages.category,
+          searched_pages.summary_brief,
+          searched_pages.knowledge_matrix,
+          1 - (searched_pages.embedding <=> query_embedding) AS similarity
+        FROM searched_pages
+        WHERE 1 - (searched_pages.embedding <=> query_embedding) > match_threshold
+        ORDER BY searched_pages.embedding <=> query_embedding
+        LIMIT match_count;
+      END;
+      $$;
+    `);
+
     console.log("[DB] PostgreSQL database tables initialized and verified successfully!");
     dbStatusString = "connected";
   } catch (err: any) {
@@ -2368,6 +2428,146 @@ Return valid JSON matching this schema:
   return res.json(fallback);
 });
 
+// Persistence Route: Automatic Search Persistence into Supabase PostgreSQL (Step 2)
+app.get("/api/search", async (req: Request, res: Response) => {
+  const queryStr = ((req.query.q as string) || "").trim();
+  if (!queryStr) {
+    return res.status(400).json({ error: "Query parameter 'q' is required" });
+  }
+
+  // Generate clean, safe, unique slug
+  const slug = queryStr
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+
+  if (!slug) {
+    return res.status(400).json({ error: "Invalid query payload" });
+  }
+
+  // 1. Check if the database cache has this search query
+  if (dbPool) {
+    try {
+      const dbRes = await dbPool.query("SELECT * FROM searched_pages WHERE slug = $1", [slug]);
+      if (dbRes.rows.length > 0) {
+        console.log(`[DB] sub-50ms cache hit for searched page slug: ${slug}`);
+        return res.json(dbRes.rows[0]);
+      }
+    } catch (err: any) {
+      console.warn("[DB] Error querying searched_pages cache:", err.message);
+    }
+  }
+
+  // 2. Synthesize if missing using Gemini AI model
+  try {
+    const prompt = `You are a Principal AI Knowledge Architect.
+Synthesize high-fidelity categorical tags, concept briefs, and deep insights for the search query: "${queryStr}".
+
+Return a valid, parsed JSON object matching this structure:
+{
+  "category": "High-level domain/discipline (e.g. Astrophysics, Artificial Intelligence)",
+  "summary_brief": "A concise, academic 2-3 sentence overview of this topic.",
+  "knowledge_matrix": {
+    "tags": ["Tag A", "Tag B", "Tag C", "Tag D", "Tag E"],
+    "concepts": [
+      { "title": "Concept 1", "description": "Brief explanation of Concept 1" },
+      { "title": "Concept 2", "description": "Brief explanation of Concept 2" }
+    ],
+    "insights": {
+      "education": "Brief educational guide or resources summary",
+      "research": "Brief academic research frontiers summary",
+      "software": "Brief open source software/tooling summary"
+    }
+  }
+}
+
+Respond strictly with valid JSON conforming to this schema, without markdown formatting or code blocks.`;
+
+    const synthesisResult = await callGeminiWithFallback({
+      contents: prompt,
+      responseMimeType: "application/json"
+    });
+
+    if (!synthesisResult || !synthesisResult.text) {
+      throw new Error("Received empty text response from Gemini model");
+    }
+
+    const cleanedText = synthesisResult.text.replace(/^```(?:json)?\s*|\s*```$/gi, "").trim();
+    const parsedData = JSON.parse(cleanedText);
+
+    const category = parsedData.category || "General Knowledge";
+    const summaryBrief = parsedData.summary_brief || "";
+    const knowledgeMatrix = parsedData.knowledge_matrix || {};
+
+    // 3. Generate text embeddings via Gemini API
+    let embeddingValues: number[] | null = null;
+    const aiClient = getGemini();
+    if (aiClient) {
+      try {
+        const embedRes = await aiClient.models.embedContent({
+          model: "text-embedding-004",
+          contents: queryStr,
+          config: {
+            outputDimensionality: 768
+          }
+        });
+        if (embedRes.embedding?.values) {
+          embeddingValues = embedRes.embedding.values;
+        }
+      } catch (embedErr: any) {
+        console.warn("[Gemini] Embedding generation notice:", embedErr.message);
+      }
+    }
+
+    const id = crypto.randomUUID();
+    const record = {
+      id,
+      slug,
+      query: queryStr,
+      category,
+      summary_brief: summaryBrief,
+      knowledge_matrix: knowledgeMatrix,
+      embedding: embeddingValues,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // 4. Upsert the generated page into Supabase database
+    if (dbPool) {
+      try {
+        const embeddingStr = embeddingValues ? `[${embeddingValues.join(",")}]` : null;
+        await dbPool.query(
+          `INSERT INTO searched_pages (id, slug, query, category, summary_brief, knowledge_matrix, embedding, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+           ON CONFLICT (slug)
+           DO UPDATE SET
+             query = EXCLUDED.query,
+             category = EXCLUDED.category,
+             summary_brief = EXCLUDED.summary_brief,
+             knowledge_matrix = EXCLUDED.knowledge_matrix,
+             embedding = COALESCE(EXCLUDED.embedding, searched_pages.embedding),
+             updated_at = NOW()`,
+          [id, slug, queryStr, category, summaryBrief, JSON.stringify(knowledgeMatrix), embeddingStr]
+        );
+        console.log(`[DB] Successfully cached search query: ${slug}`);
+      } catch (dbErr: any) {
+        console.warn("[DB] Error inserting searched page record:", dbErr.message);
+      }
+    }
+
+    // 5. Return JSON payload to client
+    return res.json(record);
+  } catch (err: any) {
+    console.error("[Search Controller] Error processing search query:", err);
+    return res.status(500).json({
+      error: "Search Synthesis Error",
+      message: err.message || "Failed to process search query synthesis."
+    });
+  }
+});
+
 // Category Data Handler (Lazy Loading Per Category)
 app.get("/api/category/:category", async (req: Request, res: Response) => {
   let category = (req.params.category || "overview").toLowerCase().trim();
@@ -3932,13 +4132,12 @@ app.get("/topic/:slug", async (req: Request, res: Response) => {
   return res.send(html);
 });
 
-// Dynamic SEO Routes: robots.txt and sitemap.xml
-app.get("/robots.txt", (req: Request, res: Response) => {
+// Dynamic SEO Routes: robots.txt and sitemap.xml (Steps 3 & 4)
+app.get("/robots.txt", (_req: Request, res: Response) => {
   res.type("text/plain");
-  const baseUrl = getPublicBaseUrl(req);
   res.send(`User-agent: *
 Allow: /
-Sitemap: ${baseUrl}/sitemap.xml
+Sitemap: https://bifrostai.up.railway.app//sitemap.xml
 `);
 });
 
@@ -3946,22 +4145,22 @@ app.get("/sitemap.xml", async (req: Request, res: Response) => {
   res.type("application/xml");
   const baseUrl = getPublicBaseUrl(req);
 
-  let topicUrls: string[] = [];
+  let searchUrls: string[] = [];
   if (dbPool) {
     try {
       const dbRes = await dbPool.query(
-        "SELECT slug, last_accessed_at FROM topic_pages WHERE is_expired = FALSE ORDER BY last_accessed_at DESC LIMIT 500"
+        "SELECT slug, updated_at FROM searched_pages ORDER BY updated_at DESC LIMIT 1000"
       );
-      topicUrls = dbRes.rows.map(
+      searchUrls = dbRes.rows.map(
         (r: any) => `  <url>
     <loc>${baseUrl}/topic/${r.slug}</loc>
-    <lastmod>${new Date(r.last_accessed_at).toISOString().split("T")[0]}</lastmod>
+    <lastmod>${new Date(r.updated_at || r.created_at || Date.now()).toISOString().split("T")[0]}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>`
       );
     } catch (e) {
-      console.warn("Error building sitemap from DB:", e);
+      console.warn("Error building sitemap from searched_pages:", e);
     }
   }
 
@@ -3974,7 +4173,7 @@ app.get("/sitemap.xml", async (req: Request, res: Response) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${staticUrls}
-${topicUrls.join("\n")}
+${searchUrls.join("\n")}
 </urlset>`);
 });
 

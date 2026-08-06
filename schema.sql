@@ -109,3 +109,60 @@ CREATE POLICY "Public bookmarks access" ON user_bookmarks FOR ALL USING (true);
 CREATE POLICY "Public users access" ON users FOR ALL USING (true);
 CREATE POLICY "Public user tab usage access" ON user_tab_usage FOR ALL USING (true);
 CREATE POLICY "Public user search history access" ON user_search_history FOR ALL USING (true);
+
+-- 8. Enable the pgvector extension to allow storage and similarity search of high-dimensional vector embeddings
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 9. Create the searched_pages table
+CREATE TABLE IF NOT EXISTS searched_pages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug TEXT UNIQUE NOT NULL,
+    query TEXT NOT NULL,
+    category TEXT NOT NULL,
+    summary_brief TEXT,
+    knowledge_matrix JSONB,
+    embedding VECTOR(768),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. Create index on slug for fast lookups
+CREATE INDEX IF NOT EXISTS idx_searched_pages_slug ON searched_pages(slug);
+
+ALTER TABLE searched_pages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public searched pages selection" ON searched_pages FOR SELECT USING (true);
+CREATE POLICY "Public searched pages mutation" ON searched_pages FOR ALL USING (true);
+
+-- 11. Write match_searched_pages function for cosine similarity search
+CREATE OR REPLACE FUNCTION match_searched_pages (
+  query_embedding VECTOR(768),
+  match_threshold FLOAT,
+  match_count INT
+)
+RETURNS TABLE (
+  id UUID,
+  slug TEXT,
+  query TEXT,
+  category TEXT,
+  summary_brief TEXT,
+  knowledge_matrix JSONB,
+  similarity FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    searched_pages.id,
+    searched_pages.slug,
+    searched_pages.query,
+    searched_pages.category,
+    searched_pages.summary_brief,
+    searched_pages.knowledge_matrix,
+    1 - (searched_pages.embedding <=> query_embedding) AS similarity
+  FROM searched_pages
+  WHERE 1 - (searched_pages.embedding <=> query_embedding) > match_threshold
+  ORDER BY searched_pages.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;

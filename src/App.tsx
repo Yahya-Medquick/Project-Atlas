@@ -143,6 +143,20 @@ export default function App() {
     return () => window.removeEventListener("popstate", syncFromUrl);
   }, []);
 
+  // Trigger automatic search query persistence and synthesis into Supabase PostgreSQL (Step 2)
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed) {
+      fetch(`/api/search?q=${encodeURIComponent(trimmed)}`)
+        .then((res) => {
+          if (!res.ok) console.warn("Failed to persist search query:", res.statusText);
+        })
+        .catch((err) => {
+          console.warn("Error calling search persistence endpoint:", err);
+        });
+    }
+  }, [query]);
+
   const updateUrlParams = (newQuery: string, newCat: CategoryType) => {
     const params = new URLSearchParams();
     if (newQuery) params.set("q", newQuery);
