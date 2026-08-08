@@ -17,8 +17,8 @@ export const GoogleLoginModal: React.FC<GoogleLoginModalProps> = ({
   const { loginWithGoogle } = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [customEmail, setCustomEmail] = useState("doctordiet78f@gmail.com");
-  const [customName, setCustomName] = useState("Doctor Diet");
+  const [customEmail, setCustomEmail] = useState("");
+  const [customName, setCustomName] = useState("");
 
   if (!isOpen) return null;
 
@@ -108,16 +108,20 @@ export const GoogleLoginModal: React.FC<GoogleLoginModalProps> = ({
             </span>
           </div>
 
-          <form onSubmit={handleSimulatedGoogleLogin} className="space-y-3">
+          <form onSubmit={handleSimulatedGoogleLogin} className="space-y-3" autoComplete="off">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Google Email
               </label>
               <input
                 type="email"
+                name="google-email-unsecure-bypass"
+                id="google-email-unsecure-bypass"
                 value={customEmail}
                 onChange={(e) => setCustomEmail(e.target.value)}
                 required
+                autoComplete="new-password"
+                spellCheck={false}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 placeholder="your.email@gmail.com"
               />
@@ -129,8 +133,12 @@ export const GoogleLoginModal: React.FC<GoogleLoginModalProps> = ({
               </label>
               <input
                 type="text"
+                name="google-name-unsecure-bypass"
+                id="google-name-unsecure-bypass"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
+                autoComplete="new-password"
+                spellCheck={false}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 placeholder="Your Name"
               />
