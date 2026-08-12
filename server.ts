@@ -4160,48 +4160,51 @@ Sitemap: https://bifrostai.up.railway.app/sitemap.xml
 });
 
 app.get("/sitemap.xml", async (req: Request, res: Response) => {
-  res.setHeader("Content-Type", "application/xml");
-  const baseUrl = getPublicBaseUrl(req);
-
-  let searchUrls: string[] = [];
+  // Fetch all topic slugs saved in your database (mapped from searched_pages in PostgreSQL)
+  let topics: { slug: string; updated_at: string }[] = [];
   if (dbPool) {
     try {
       const dbRes = await dbPool.query(
-        "SELECT slug, updated_at, created_at FROM searched_pages ORDER BY updated_at DESC LIMIT 1000"
+        "SELECT slug, updated_at FROM searched_pages ORDER BY updated_at DESC LIMIT 1000"
       );
-      searchUrls = dbRes.rows.map((r: any) => {
-        const rawSlug = (r.slug || "").trim();
-        const urlEncodedSlug = encodeURIComponent(rawSlug);
-        const xmlEscapedSlug = escapeHtml(urlEncodedSlug);
-
-        const lastModDate = new Date(r.updated_at || r.created_at || Date.now());
+      topics = dbRes.rows.map((r: any) => {
+        const lastModDate = new Date(r.updated_at || Date.now());
         const lastModStr = isNaN(lastModDate.getTime()) 
-          ? new Date().toISOString().split("T")[0] 
-          : lastModDate.toISOString().split("T")[0];
-
-        return `  <url>
-    <loc>${baseUrl}/topic/${xmlEscapedSlug}</loc>
-    <lastmod>${lastModStr}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>`;
+          ? new Date().toISOString()
+          : lastModDate.toISOString();
+        return {
+          slug: r.slug,
+          updated_at: lastModStr,
+        };
       });
     } catch (e) {
       console.warn("Error building sitemap from searched_pages:", e);
     }
   }
+  
+  const domain = getPublicBaseUrl(req) || "https://ais-dev-uswuwfmzkzfwmqpluvsrqs-237075000954.asia-east1.run.app";
+  
+  const urlsXml = topics.map(topic => `
+    <url>
+      <loc>${domain}/topic/${topic.slug}</loc>
+      <lastmod>${topic.updated_at.split('T')[0]}</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>0.8</priority>
+    </url>
+  `).join("");
 
-  const staticUrls = `  <url>
-    <loc>${baseUrl}/</loc>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>`;
+  const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+  <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+      <loc>${domain}/</loc>
+      <changefreq>daily</changefreq>
+      <priority>1.0</priority>
+    </url>
+    ${urlsXml}
+  </urlset>`;
 
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${staticUrls}
-${searchUrls.join("\n")}
-</urlset>`);
+  res.header("Content-Type", "application/xml");
+  res.send(sitemapXml);
 });
 
 // Centralized Error Handling Middleware (Prevents Sensitive Stack Leakage)
