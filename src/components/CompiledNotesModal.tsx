@@ -38,13 +38,56 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
   // Strip markdown for plain PDF — equations converted to readable text
   const stripMarkdown = (text: string): string => {
     let clean = text;
-    // Convert block LaTeX equations to readable text
+
+    const convertLatex = (latex: string): string => {
+      let eq = latex.trim();
+      // Remove display math markers
+      eq = eq.replace(/^\$\$|\$\$$/g, '').replace(/^\$|\$$/g, '');
+      // Common symbols first
+      eq = eq.replace(/\\times/g, '×');
+      eq = eq.replace(/\\approx/g, '≈');
+      eq = eq.replace(/\\to/g, '→');
+      eq = eq.replace(/\\infty/g, '∞');
+      eq = eq.replace(/\\cdot/g, '·');
+      eq = eq.replace(/\\pm/g, '±');
+      eq = eq.replace(/\\geq/g, '≥');
+      eq = eq.replace(/\\leq/g, '≤');
+      eq = eq.replace(/\\neq/g, '≠');
+      eq = eq.replace(/\\alpha/g, 'α');
+      eq = eq.replace(/\\beta/g, 'β');
+      eq = eq.replace(/\\gamma/g, 'γ');
+      eq = eq.replace(/\\Delta/g, 'Δ');
+      eq = eq.replace(/\\pi/g, 'π');
+      // Handle \frac{a}{b} → (a)/(b) — do this multiple times for nested fracs
+      for (let i = 0; i < 5; i++) {
+        eq = eq.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
+      }
+      // Handle \sqrt{a} → √(a)
+      for (let i = 0; i < 3; i++) {
+        eq = eq.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
+      }
+      // Handle superscripts ^{...} and ^x
+      eq = eq.replace(/\^\{([^{}]+)\}/g, '^$1');
+      eq = eq.replace(/\^(\w)/g, '^$1');
+      // Handle subscripts _{...} and _x
+      eq = eq.replace(/_\{([^{}]+)\}/g, '_$1');
+      eq = eq.replace(/_(\w)/g, '_$1');
+      // Remove remaining backslash commands
+      eq = eq.replace(/\\[a-zA-Z]+/g, '');
+      // Clean up extra braces
+      eq = eq.replace(/\{([^{}]*)\}/g, '$1');
+      // Clean up extra spaces
+      eq = eq.replace(/\s+/g, ' ').trim();
+      return eq;
+    };
+
+    // Block equations $$...$$
     clean = clean.replace(/\$\$([^$]+)\$\$/g, (_match, eq) =>
-      `[Equation: ${eq.trim().replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)').replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)').replace(/\\times/g, 'x').replace(/\\approx/g, '≈').replace(/\\to/g, '→').replace(/\\/g, '').trim()}]`
+      `\n[Equation: ${convertLatex(eq)}]\n`
     );
-    // Convert inline LaTeX
-    clean = clean.replace(/\$([^$]+)\$/g, (_match, eq) =>
-      eq.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)').replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)').replace(/\\times/g, 'x').replace(/\\approx/g, '≈').replace(/\\to/g, '→').replace(/\\/g, '').trim()
+    // Inline equations $...$
+    clean = clean.replace(/\$([^$\n]+)\$/g, (_match, eq) =>
+      convertLatex(eq)
     );
     // Remove headings but keep text
     clean = clean.replace(/^#{1,6}\s+(.+)$/gm, '$1');
@@ -221,8 +264,8 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
       <head>
         <title>${fileName}</title>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"><\/script>
-        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"><\/script>
+        <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"><\/script>
+        <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"><\/script>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { font-family: 'Georgia', serif; font-size: 11pt; color: #1a1a1a; padding: 20mm 18mm; line-height: 1.7; }
@@ -257,7 +300,6 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
           <button onclick="window.print()" style="background:#1e3a5f;color:white;border:none;padding:4px 14px;border-radius:4px;cursor:pointer;font-size:9pt;">🖨️ Print / Save as PDF</button>
         </div>
         <script>
-          // Convert markdown to basic HTML
           let content = ${JSON.stringify(editableContent)};
           content = content
             .replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -267,18 +309,28 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
             .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
             .replace(/\\*(.+?)\\*/g, '<em>$1</em>')
             .replace(/^[-*+] (.+)$/gm, '<li>$1</li>')
-            .replace(/(<li>.*<\\/li>)/gs, '<ul>$1</ul>')
+            .replace(/(<li>[\\s\\S]*?<\\/li>)/g, '<ul>$1</ul>')
             .replace(/^---$/gm, '<hr>')
             .replace(/\\n\\n/g, '</p><p>')
-            .replace(/^(?!<[hup]|<li|<hr)(.+)$/gm, '<p>$1</p>');
+            .replace(/^(?!<[hupli]|<hr)(.+)$/gm, '<p>$1</p>');
           document.getElementById('content').innerHTML = content;
-          renderMathInElement(document.body, {
-            delimiters: [
-              {left: '\\$\\$', right: '\\$\\$', display: true},
-              {left: '\\$', right: '\\$', display: false}
-            ],
-            throwOnError: false
-          });
+
+          // Wait for KaTeX auto-render script to load then render
+          function tryRender(attempts) {
+            if (typeof renderMathInElement !== 'undefined') {
+              renderMathInElement(document.body, {
+                delimiters: [
+                  {left: '$$', right: '$$', display: true},
+                  {left: '$', right: '$', display: false}
+                ],
+                throwOnError: false
+              });
+            } else if (attempts > 0) {
+              setTimeout(() => tryRender(attempts - 1), 200);
+            }
+          }
+          // Start trying after a short delay to allow scripts to load
+          setTimeout(() => tryRender(10), 300);
         <\/script>
       </body>
       </html>

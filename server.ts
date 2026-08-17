@@ -2678,23 +2678,25 @@ app.post("/api/notes/compile", async (req: Request, res: Response) => {
       .map((n) => `--- NOTE TITLE: ${n.title} [Subject: ${n.subject_tag || "General"}] ---\n${n.content}`)
       .join("\n\n");
 
+    const totalInputLength = combinedContent.length;
     const compilePrompt = `You are a professional document formatter, NOT a summarizer.
 
-Your job is to take the student notes below and reorganize them into a clean, well-structured study document.
+The input notes below contain approximately ${totalInputLength} characters of content.
+Your output MUST be at least ${Math.floor(totalInputLength * 0.9)} characters long.
+If your output would be shorter than this, you are summarizing — which is FORBIDDEN.
 
-STRICT RULES YOU MUST FOLLOW:
-1. PRESERVE every single fact, formula, point, definition, and detail from every note
-2. Do NOT summarize, condense, or shorten any content
-3. Do NOT add a "Summary" section at the end
-4. Only remove exact duplicate sentences that appear more than once
-5. Group related content under clear headings
+STRICT RULES:
+1. PRESERVE every single fact, formula, definition, and detail
+2. Do NOT summarize or condense any content
+3. Do NOT add a Summary section
+4. Only remove exact duplicate sentences
+5. Group related content under clear ## headings and ### subheadings
 6. Add smooth transitions between sections
-7. The output document must be roughly the same length as the input or longer — NEVER shorter
-8. Format all mathematical equations using LaTeX notation: inline with $...$ and block with $$...$$
-9. Use proper markdown: ## for main headings, ### for subheadings, **bold** for key terms, bullet points for lists
-10. Maintain the student's original voice and detail level throughout
+7. Format equations using LaTeX: inline $...$ and block $$...$$
+8. Use **bold** for key terms, bullet points for lists
+9. Maintain full detail level throughout — every point the student wrote must appear
 
-Student notes to format:
+Student notes:
 ${combinedContent}`;
 
     const result = await callGeminiWithFallback({
