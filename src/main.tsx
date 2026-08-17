@@ -5,6 +5,7 @@ import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { UserProvider } from "./context/UserContext";
 import "./index.css";
+import 'katex/dist/katex.min.css';
 
 const googleClientId =
   (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||

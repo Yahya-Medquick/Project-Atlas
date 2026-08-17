@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import jsPDF from 'jspdf';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
@@ -14,10 +14,11 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('preview');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const printRef = useRef<HTMLDivElement>(null);
 
-  // Sync editableContent when compiledText changes
   useEffect(() => {
     setEditableContent(compiledText);
+    setViewMode('preview');
   }, [compiledText]);
 
   if (!isOpen) return null;
@@ -34,79 +35,172 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Strip markdown for plain PDF — equations converted to readable text
   const stripMarkdown = (text: string): string => {
-    return text
-      .replace(/^#{1,6}\s+/gm, '')
-      .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
-      .replace(/\*\*(.+?)\*\*/g, '$1')
-      .replace(/\*(.+?)\*/g, '$1')
-      .replace(/__(.+?)__/g, '$1')
-      .replace(/_(.+?)_/g, '$1')
-      .replace(/^\s*[\*\-\+]\s+/gm, '• ')
-      .replace(/^\s*\d+\.\s+/gm, '')
-      .replace(/^[-*_]{3,}$/gm, '─────────────────')
-      .replace(/```[\s\S]*?```/g, '')
-      .replace(/`(.+?)`/g, '$1')
-      .replace(/^\s*>\s+/gm, '')
-      .replace(/\[(.+?)\]\(.+?\)/g, '$1')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    let clean = text;
+    // Convert block LaTeX equations to readable text
+    clean = clean.replace(/\$\$([^$]+)\$\$/g, (_match, eq) =>
+      `[Equation: ${eq.trim().replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)').replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)').replace(/\\times/g, 'x').replace(/\\approx/g, '≈').replace(/\\to/g, '→').replace(/\\/g, '').trim()}]`
+    );
+    // Convert inline LaTeX
+    clean = clean.replace(/\$([^$]+)\$/g, (_match, eq) =>
+      eq.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)').replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)').replace(/\\times/g, 'x').replace(/\\approx/g, '≈').replace(/\\to/g, '→').replace(/\\/g, '').trim()
+    );
+    // Remove headings but keep text
+    clean = clean.replace(/^#{1,6}\s+(.+)$/gm, '$1');
+    // Remove bold italic
+    clean = clean.replace(/\*\*\*(.+?)\*\*\*/g, '$1');
+    clean = clean.replace(/\*\*(.+?)\*\*/g, '$1');
+    clean = clean.replace(/\*(.+?)\*/g, '$1');
+    clean = clean.replace(/__(.+?)__/g, '$1');
+    clean = clean.replace(/_(.+?)_/g, '$1');
+    // Convert bullets
+    clean = clean.replace(/^\s*[-*+]\s+/gm, '• ');
+    // Remove numbered list markers
+    clean = clean.replace(/^\s*\d+\.\s+/gm, '');
+    // Mark horizontal rules for special handling
+    clean = clean.replace(/^[-*_]{3,}$/gm, '---HRULE---');
+    // Remove code blocks
+    clean = clean.replace(/```[\s\S]*?```/gm, '');
+    clean = clean.replace(/`([^`]+)`/g, '$1');
+    // Remove blockquotes
+    clean = clean.replace(/^\s*>\s*/gm, '');
+    // Remove links keep text
+    clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    // Remove image syntax
+    clean = clean.replace(/!\[([^\]]*)\]\([^)]+\)/g, '');
+    // Remove HTML tags
+    clean = clean.replace(/<[^>]+>/g, '');
+    // Collapse extra blank lines
+    clean = clean.replace(/\n{3,}/g, '\n\n');
+    return clean.trim();
   };
+
+  // Detect if content has LaTeX equations
+  const hasEquations = /\$\$?[^$]+\$\$?/.test(editableContent);
 
   const handleDownloadPDF = async () => {
     setIsGenerating(true);
     try {
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 20;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 18;
       const contentWidth = pageWidth - margin * 2;
-      let yPosition = 20;
+      let y = 28;
 
-      // Header background
-      pdf.setFillColor(30, 58, 95);
-      pdf.rect(0, 0, pageWidth, 35, 'F');
+      // Slim header — just a thin top line and text
+      pdf.setDrawColor(30, 58, 95);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin, 8, pageWidth - margin, 8);
 
-      // Header text
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(16);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Bifrost AI — Study Notes', margin, 15);
+      pdf.setTextColor(30, 58, 95);
       pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Bifrost AI Study Notes', margin, 14);
+
       pdf.setFont('helvetica', 'normal');
-      pdf.text(`${today}${subjectTags.length > 0 ? ' • ' + subjectTags.join(', ') : ''}`, margin, 25);
+      pdf.setFontSize(8);
+      pdf.setTextColor(120, 120, 120);
+      const headerRight = `${today}${subjectTags.length > 0 ? '  •  ' + subjectTags.join(', ') : ''}`;
+      pdf.text(headerRight, pageWidth - margin, 14, { align: 'right' });
 
-      yPosition = 50;
+      pdf.setDrawColor(220, 220, 220);
+      pdf.setLineWidth(0.3);
+      pdf.line(margin, 18, pageWidth - margin, 18);
 
-      // Content
-      pdf.setTextColor(30, 30, 30);
-      pdf.setFontSize(11);
-      pdf.setFont('helvetica', 'normal');
-
-      // Split content into lines that fit the page width
+      // Process content
       const cleanContent = stripMarkdown(editableContent);
-      const lines = pdf.splitTextToSize(cleanContent, contentWidth);
+      const paragraphs = cleanContent.split('\n');
 
-      lines.forEach((line: string) => {
-        if (yPosition > 270) {
+      paragraphs.forEach((paragraph: string) => {
+        const trimmed = paragraph.trim();
+
+        if (y > pageHeight - 20) {
           pdf.addPage();
-          yPosition = 20;
+          y = 20;
+          // Repeat slim header on new pages
+          pdf.setDrawColor(220, 220, 220);
+          pdf.setLineWidth(0.3);
+          pdf.line(margin, 8, pageWidth - margin, 8);
         }
-        const trimmed = line.trim();
-        if (trimmed.length > 0 && trimmed.length < 60 && !trimmed.startsWith('•')) {
+
+        // Empty line
+        if (trimmed === '') {
+          y += 3;
+          return;
+        }
+
+        // Horizontal rule — draw a real line
+        if (trimmed === '---HRULE---') {
+          pdf.setDrawColor(200, 200, 200);
+          pdf.setLineWidth(0.3);
+          pdf.line(margin, y, pageWidth - margin, y);
+          y += 5;
+          return;
+        }
+
+        // Heading detection — short line not starting with bullet
+        const isHeading = trimmed.length < 80 &&
+          !trimmed.startsWith('•') &&
+          !trimmed.startsWith('[Equation') &&
+          /^[A-Z0-9]/.test(trimmed);
+
+        // Equation line
+        if (trimmed.startsWith('[Equation:')) {
+          pdf.setFillColor(245, 247, 250);
+          const eqLines = pdf.splitTextToSize(trimmed, contentWidth - 8);
+          const boxHeight = eqLines.length * 6 + 6;
+          pdf.rect(margin, y - 4, contentWidth, boxHeight, 'F');
+          pdf.setFont('courier', 'normal');
+          pdf.setFontSize(9);
+          pdf.setTextColor(40, 40, 120);
+          eqLines.forEach((line: string) => {
+            pdf.text(line, margin + 4, y);
+            y += 6;
+          });
+          y += 3;
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(50, 50, 50);
+          return;
+        }
+
+        if (isHeading && trimmed.length < 60) {
+          y += 3;
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(12);
+          pdf.setTextColor(20, 40, 80);
+        } else if (trimmed.startsWith('•')) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(10);
+          pdf.setTextColor(50, 50, 50);
         } else {
           pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(11);
+          pdf.setFontSize(10);
+          pdf.setTextColor(50, 50, 50);
         }
-        pdf.text(line, margin, yPosition);
-        yPosition += trimmed === '' ? 4 : 7;
+
+        const lines = pdf.splitTextToSize(trimmed, contentWidth);
+        lines.forEach((line: string) => {
+          if (y > pageHeight - 20) {
+            pdf.addPage();
+            y = 20;
+          }
+          pdf.text(line, trimmed.startsWith('•') ? margin + 3 : margin, y);
+          y += trimmed.startsWith('•') ? 5.5 : 6.5;
+        });
       });
 
-      // Footer
-      pdf.setFontSize(9);
-      pdf.setTextColor(150, 150, 150);
-      pdf.text('Generated by Bifrost AI • bifrostai.up.railway.app', margin, 285);
+      // Footer on every page
+      const totalPages = (pdf as any).internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(7);
+        pdf.setTextColor(180, 180, 180);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text('Generated by Bifrost AI  •  bifrostai.up.railway.app', margin, pageHeight - 6);
+        pdf.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
+      }
 
       pdf.save(fileName);
     } catch (err) {
@@ -116,16 +210,92 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
     }
   };
 
+  // Print view for documents with equations
+  const handlePrintView = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${fileName}</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"><\/script>
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"><\/script>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Georgia', serif; font-size: 11pt; color: #1a1a1a; padding: 20mm 18mm; line-height: 1.7; }
+          .header { border-bottom: 2px solid #1e3a5f; padding-bottom: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+          .header-brand { font-size: 11pt; font-weight: bold; color: #1e3a5f; font-family: Arial, sans-serif; }
+          .header-meta { font-size: 8pt; color: #888; font-family: Arial, sans-serif; text-align: right; }
+          h1 { font-size: 15pt; font-weight: bold; color: #1e3a5f; margin: 18px 0 8px; }
+          h2 { font-size: 13pt; font-weight: bold; color: #1e3a5f; margin: 14px 0 6px; }
+          h3 { font-size: 11pt; font-weight: bold; color: #2d4a7a; margin: 10px 0 4px; }
+          p { margin-bottom: 10px; }
+          ul, ol { padding-left: 20px; margin-bottom: 10px; }
+          li { margin-bottom: 4px; }
+          strong { font-weight: bold; }
+          hr { border: none; border-top: 1px solid #ddd; margin: 14px 0; }
+          .katex-display { margin: 12px 0; padding: 10px; background: #f5f7fa; border-left: 3px solid #1e3a5f; border-radius: 4px; overflow-x: auto; }
+          .footer { position: fixed; bottom: 10mm; left: 18mm; right: 18mm; font-size: 7pt; color: #aaa; font-family: Arial, sans-serif; display: flex; justify-content: space-between; border-top: 1px solid #eee; padding-top: 4px; }
+          @media print {
+            body { padding: 15mm 15mm; }
+            .no-print { display: none; }
+            @page { margin: 15mm; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="header-brand">⚡ Bifrost AI Study Notes</div>
+          <div class="header-meta">${today}${subjectTags.length > 0 ? '<br>' + subjectTags.join(', ') : ''}</div>
+        </div>
+        <div id="content"></div>
+        <div class="footer no-print">
+          <span>Generated by Bifrost AI • bifrostai.up.railway.app</span>
+          <button onclick="window.print()" style="background:#1e3a5f;color:white;border:none;padding:4px 14px;border-radius:4px;cursor:pointer;font-size:9pt;">🖨️ Print / Save as PDF</button>
+        </div>
+        <script>
+          // Convert markdown to basic HTML
+          let content = ${JSON.stringify(editableContent)};
+          content = content
+            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+            .replace(/\\*\\*\\*(.+?)\\*\\*\\*/g, '<strong><em>$1</em></strong>')
+            .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
+            .replace(/\\*(.+?)\\*/g, '<em>$1</em>')
+            .replace(/^[-*+] (.+)$/gm, '<li>$1</li>')
+            .replace(/(<li>.*<\\/li>)/gs, '<ul>$1</ul>')
+            .replace(/^---$/gm, '<hr>')
+            .replace(/\\n\\n/g, '</p><p>')
+            .replace(/^(?!<[hup]|<li|<hr)(.+)$/gm, '<p>$1</p>');
+          document.getElementById('content').innerHTML = content;
+          renderMathInElement(document.body, {
+            delimiters: [
+              {left: '\\$\\$', right: '\\$\\$', display: true},
+              {left: '\\$', right: '\\$', display: false}
+            ],
+            throwOnError: false
+          });
+        <\/script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="bg-gray-900 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-700">
 
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
+        <div className="flex items-center justify-between p-5 border-b border-gray-700">
           <div>
-            <h2 className="text-xl font-bold text-white">📄 Compiled Study Notes</h2>
-            <p className="text-sm text-gray-400 mt-1">
-              Generated by Bifrost AI • {today}
+            <h2 className="text-lg font-bold text-white">📄 Compiled Study Notes</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Bifrost AI • {today}
               {subjectTags.length > 0 && ` • ${subjectTags.join(', ')}`}
             </p>
           </div>
@@ -133,36 +303,35 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
         </div>
 
         {/* View Mode Toggle */}
-        <div className="flex items-center gap-2 px-6 pt-4 pb-2 border-b border-gray-800 bg-gray-900/60">
+        <div className="flex items-center gap-2 px-5 pt-3 pb-2 border-b border-gray-800">
           <button
-            type="button"
             onClick={() => setViewMode('preview')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              viewMode === 'preview'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              viewMode === 'preview' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
             }`}
           >
-            <span>👁 Preview</span>
+            👁 Preview
           </button>
           <button
-            type="button"
             onClick={() => setViewMode('edit')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              viewMode === 'edit'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              viewMode === 'edit' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
             }`}
           >
-            <span>✏️ Edit</span>
+            ✏️ Edit
           </button>
+          {hasEquations && (
+            <span className="ml-auto text-xs text-amber-400 flex items-center gap-1">
+              ∑ Contains equations — use Print View for best PDF quality
+            </span>
+          )}
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 min-h-[380px]">
+        <div className="flex-1 overflow-y-auto p-5 min-h-[380px]">
           {viewMode === 'preview' ? (
-            <div className="bg-gray-800/60 border border-gray-700/60 rounded-xl p-5 min-h-[380px] text-gray-200 text-sm leading-relaxed overflow-y-auto">
-              <MarkdownRenderer content={editableContent} className="text-gray-200 font-sans" />
+            <div className="bg-gray-800/60 border border-gray-700/60 rounded-xl p-5 min-h-[380px]">
+              <MarkdownRenderer content={editableContent} />
             </div>
           ) : (
             <textarea
@@ -175,19 +344,25 @@ export const CompiledNotesModal = ({ isOpen, onClose, compiledText, subjectTags 
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-3 p-6 border-t border-gray-700">
+        <div className="flex gap-2 p-5 border-t border-gray-700">
           <button
             onClick={handleCopy}
-            className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 transition-colors font-medium cursor-pointer"
+            className="px-4 py-2.5 rounded-xl border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 transition-colors font-medium text-sm cursor-pointer"
           >
-            {copied ? '✓ Copied!' : '📋 Copy Text'}
+            {copied ? '✓ Copied!' : '📋 Copy'}
+          </button>
+          <button
+            onClick={handlePrintView}
+            className="px-4 py-2.5 rounded-xl border border-amber-600 text-amber-400 hover:bg-amber-600 hover:text-white transition-colors font-medium text-sm cursor-pointer"
+          >
+            🖨️ Print View
           </button>
           <button
             onClick={handleDownloadPDF}
             disabled={isGenerating}
-            className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors cursor-pointer"
+            className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition-colors cursor-pointer"
           >
-            {isGenerating ? '⏳ Generating PDF...' : '⬇️ Download as PDF'}
+            {isGenerating ? '⏳ Generating...' : '⬇️ Download PDF'}
           </button>
         </div>
       </div>

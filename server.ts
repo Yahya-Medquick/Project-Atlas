@@ -2674,21 +2674,31 @@ app.post("/api/notes/compile", async (req: Request, res: Response) => {
     }
 
     // Combine notes title and content
-    const combinedNotesText = notes
+    const combinedContent = notes
       .map((n) => `--- NOTE TITLE: ${n.title} [Subject: ${n.subject_tag || "General"}] ---\n${n.content}`)
       .join("\n\n");
 
-    const prompt = `Compile these student notes into a single, well-structured study document.
-Use clear headings for each topic, organize related content together,
-remove repetition, and add a brief summary at the end.
+    const compilePrompt = `You are a professional document formatter, NOT a summarizer.
 
-Notes to compile:
-${combinedNotesText}
+Your job is to take the student notes below and reorganize them into a clean, well-structured study document.
 
-Return only the compiled document text, no extra commentary.`;
+STRICT RULES YOU MUST FOLLOW:
+1. PRESERVE every single fact, formula, point, definition, and detail from every note
+2. Do NOT summarize, condense, or shorten any content
+3. Do NOT add a "Summary" section at the end
+4. Only remove exact duplicate sentences that appear more than once
+5. Group related content under clear headings
+6. Add smooth transitions between sections
+7. The output document must be roughly the same length as the input or longer — NEVER shorter
+8. Format all mathematical equations using LaTeX notation: inline with $...$ and block with $$...$$
+9. Use proper markdown: ## for main headings, ### for subheadings, **bold** for key terms, bullet points for lists
+10. Maintain the student's original voice and detail level throughout
+
+Student notes to format:
+${combinedContent}`;
 
     const result = await callGeminiWithFallback({
-      contents: [{ role: "user", parts: [{ text: prompt }] }]
+      contents: [{ role: "user", parts: [{ text: compilePrompt }] }]
     });
 
     return res.json({ compiled: result.text.trim() });
