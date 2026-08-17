@@ -1,4 +1,4 @@
-import { CategoryApiResponse, CategoryType } from "../types";
+import { CategoryApiResponse, CategoryType, UserAuth } from "../types";
 
 // In-Memory Caches
 const clientMemoryCache = new Map<string, { data: CategoryApiResponse; expiresAt: number }>();
@@ -129,6 +129,53 @@ export async function googleLogin(payload: { idToken?: string; credential?: stri
   return data;
 }
 
+export async function registerUser(email: string, name: string): Promise<{ message: string }> {
+  const res = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ email, name }),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || "Registration failed");
+  }
+  return await res.json();
+}
+
+export async function verifyEmail(token: string, password: string): Promise<UserAuth> {
+  const res = await fetch("/api/auth/verify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ token, password }),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || "Email verification failed");
+  }
+  const data = await res.json();
+  if (data.token) {
+    localStorage.setItem("bifrost_session_token", data.token);
+  }
+  return data.user;
+}
+
+export async function loginWithEmail(email: string, password: string): Promise<UserAuth> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || "Login failed");
+  }
+  const data = await res.json();
+  if (data.token) {
+    localStorage.setItem("bifrost_session_token", data.token);
+  }
+  return data.user;
+}
+
 export async function logoutUser() {
   localStorage.removeItem("bifrost_session_token");
   const res = await fetch("/api/auth/logout", {
@@ -151,6 +198,22 @@ export async function fetchCurrentUser() {
   } catch (err) {
     console.warn("fetchCurrentUser error:", err);
     return null;
+  }
+}
+
+export async function updatePreferencesMode(mode: "research" | "learning") {
+  try {
+    const res = await fetch("/api/user/preferences", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ preferred_mode: mode }),
+    });
+    if (!res.ok) throw new Error("Failed to update preferences");
+    return await res.json();
+  } catch (err) {
+    console.error("updatePreferencesMode error:", err);
+    throw err;
   }
 }
 

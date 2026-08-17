@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Copy, Check, RefreshCw, BookOpen, Layers, Target, HelpCircle } from "lucide-react";
+import { Copy, Check, RefreshCw, BookOpen, Layers, Target, HelpCircle, Plus } from "lucide-react";
+import { MarkdownRenderer } from "./MarkdownRenderer";
+import { useNotes } from "../hooks/useNotes";
 
 export type ComplexityLevel = "beginner" | "intermediate" | "advanced";
 
@@ -32,6 +34,32 @@ export const MultiLevelDefinitionCard: React.FC<MultiLevelDefinitionCardProps> =
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+
+  const { addNote } = useNotes();
+  const [addedMap, setAddedMap] = useState<Record<string, boolean>>({});
+
+  const triggerToast = (msg: string) => {
+    const toast = document.createElement("div");
+    toast.className = "fixed bottom-24 right-6 z-50 bg-slate-900 text-white text-xs px-3.5 py-2.5 rounded-xl border border-slate-700 shadow-xl flex items-center gap-1.5 font-medium animate-fade-in";
+    toast.innerHTML = `<span>✓</span> <span>${msg}</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.5s ease";
+      setTimeout(() => toast.remove(), 500);
+    }, 2000);
+  };
+
+  const handleAddNote = async (key: string, title: string, content: string) => {
+    try {
+      await addNote(title, content, "Education");
+      setAddedMap((prev) => ({ ...prev, [key]: true }));
+      triggerToast("Added to Notes ✓");
+      setTimeout(() => setAddedMap((prev) => ({ ...prev, [key]: false })), 3000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchDefinition = async () => {
     setLoading(true);
@@ -149,23 +177,45 @@ export const MultiLevelDefinitionCard: React.FC<MultiLevelDefinitionCardProps> =
             </span>
 
             {meaningText && (
-              <button
-                onClick={() => handleCopy(`${levelConfigs[activeLevel].label} definition for ${topic}:\n${meaningText}`)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                title="Copy definition text"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="text-emerald-500 text-[11px] font-medium">Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span className="text-[11px]">Copy</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const content = `## ${levelConfigs[activeLevel].label} Definition: ${topic}\n\n${meaningText}\n\n### Skills:\n${skillsList.join(", ")}\n\n### Expected Depth:\n${depthText}`;
+                    handleAddNote(activeLevel, `${levelConfigs[activeLevel].label} Definition: ${topic}`, content);
+                  }}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs flex items-center gap-1 transition-colors cursor-pointer font-medium"
+                >
+                  {addedMap[activeLevel] ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-emerald-500 text-[11px] font-medium">Added</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span className="text-[11px]">+ Notes</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => handleCopy(`${levelConfigs[activeLevel].label} definition for ${topic}:\n${meaningText}`)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Copy definition text"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-emerald-500 text-[11px] font-medium">Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span className="text-[11px]">Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
 
@@ -174,9 +224,7 @@ export const MultiLevelDefinitionCard: React.FC<MultiLevelDefinitionCardProps> =
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
               What {levelConfigs[activeLevel].label} Means for {topic}
             </span>
-            <p className="text-slate-800 dark:text-slate-200 text-sm leading-relaxed font-normal">
-              {meaningText}
-            </p>
+            <MarkdownRenderer content={meaningText} className="text-sm text-slate-800 dark:text-slate-200" />
           </div>
 
           {/* Grid for Defining Concepts & Depth of Understanding */}
@@ -208,9 +256,7 @@ export const MultiLevelDefinitionCard: React.FC<MultiLevelDefinitionCardProps> =
                   <Target className="w-3.5 h-3.5 text-slate-400" />
                   <span>Expected Depth of Understanding</span>
                 </div>
-                <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-normal">
-                  {depthText}
-                </p>
+                <MarkdownRenderer content={depthText} className="text-xs text-slate-600 dark:text-slate-300" />
               </div>
             )}
           </div>
@@ -222,9 +268,7 @@ export const MultiLevelDefinitionCard: React.FC<MultiLevelDefinitionCardProps> =
                 <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
                 <span>Typical Scenarios & Questions Tackled</span>
               </div>
-              <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-normal">
-                {problemsText}
-              </p>
+              <MarkdownRenderer content={problemsText} className="text-xs text-slate-600 dark:text-slate-300" />
             </div>
           )}
         </div>

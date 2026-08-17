@@ -12,11 +12,15 @@ import { CommunityCard } from "./cards/CommunityCard";
 import { AIQuestionAnswerCard } from "./AIQuestionAnswerCard";
 import { MultiLevelDefinitionCard } from "./MultiLevelDefinitionCard";
 import { HistoryViewer } from "./HistoryViewer";
-import { AlertCircle, RefreshCw, ArrowDown, FolderOpen, Lock, LogIn, Clock, ShieldAlert } from "lucide-react";
+import { AlertCircle, RefreshCw, ArrowDown, FolderOpen, Lock, LogIn, Clock, ShieldAlert, MessageSquare, Compass, FileText } from "lucide-react";
 import { useUser } from "../context/UserContext";
 
 const KnowledgeGraph = lazy(() =>
   import("./KnowledgeGraph").then((m) => ({ default: m.KnowledgeGraph }))
+);
+
+const LearningQACard = lazy(() =>
+  import("./cards/LearningQACard").then((m) => ({ default: m.LearningQACard }))
 );
 
 interface CategoryViewerProps {
@@ -487,6 +491,48 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
         ) : (
           renderEmptyState("Recommendations")
         )
+      )}
+
+      {/* 12. LEARNING Q&A CARD */}
+      {category === "qa" && (
+        <Suspense fallback={
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-2xl p-8 text-center space-y-4 shadow-xs">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+            <p className="text-xs text-slate-500">Loading AI Learning Q&A...</p>
+          </div>
+        }>
+          <LearningQACard />
+        </Suspense>
+      )}
+
+      {/* 13. COUNSELING PLACEHOLDER */}
+      {category === "counseling" && (
+        <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center space-y-4 max-w-xl mx-auto my-8 shadow-xs">
+          <div className="w-16 h-16 rounded-full bg-teal-50 dark:bg-teal-950 flex items-center justify-center text-teal-600 dark:text-teal-400 mx-auto">
+            <Compass className="w-8 h-8" />
+          </div>
+          <h3 className="font-bold text-slate-900 dark:text-white text-base">
+            Counseling Advisor Coming Soon
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            Receive personalized subject selection advice, board exam strategies, and career planning insights optimized for Pakistani secondary and higher secondary education tracks.
+          </p>
+        </div>
+      )}
+
+      {/* 14. NOTES PLACEHOLDER */}
+      {category === "notes" && (
+        <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center space-y-4 max-w-xl mx-auto my-8 shadow-xs">
+          <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-950 flex items-center justify-center text-amber-600 dark:text-amber-400 mx-auto">
+            <FileText className="w-8 h-8" />
+          </div>
+          <h3 className="font-bold text-slate-900 dark:text-white text-base">
+            Syllabus Notes Coming Soon
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            Generate customized FSc/Matric revision summaries, highlight key board formulas, and organize personalized lecture notes to study smarter.
+          </p>
+        </div>
       )}
 
       {/* Infinite Scroll / Load More Action */}

@@ -1,17 +1,20 @@
 import React, { useState, useEffect, lazy, Suspense } from "react";
-import { CategoryType, Entity } from "./types";
+import { CategoryType, Entity, Persona } from "./types";
 import { useTheme } from "./hooks/useTheme";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useCategoryData } from "./hooks/useCategoryData";
 import { useUser } from "./context/UserContext";
 import { Header } from "./components/Header";
 import { SearchBar } from "./components/SearchBar";
+import { PersonaSuggestions } from "./components/PersonaSuggestions";
 import { CategoryTabs } from "./components/CategoryTabs";
 import { TopicHero } from "./components/TopicHero";
 import { CategoryViewer } from "./components/CategoryViewer";
 import { SidebarInsights } from "./components/SidebarInsights";
-import { GoogleLoginModal } from "./components/GoogleLoginModal";
+import { AuthModal } from "./components/AuthModal";
 import { Footer } from "./components/Footer";
+import { NotesSidePanel } from "./components/NotesSidePanel";
+import { useNotes } from "./hooks/useNotes";
 import {
   Sparkles,
   Network,
@@ -19,7 +22,10 @@ import {
   FileText,
 } from "lucide-react";
 
-// Lazy-loaded Modal components for Bundle Optimization
+// Lazy-loaded components for Bundle Optimization
+const VerifyPage = lazy(() =>
+  import("./components/VerifyPage").then((m) => ({ default: m.VerifyPage }))
+);
 const BookmarksModal = lazy(() =>
   import("./components/BookmarksModal").then((m) => ({ default: m.BookmarksModal }))
 );
@@ -39,14 +45,69 @@ const DeveloperApiModal = lazy(() =>
   import("./components/DeveloperApiModal").then((m) => ({ default: m.DeveloperApiModal }))
 );
 
+const LearningQACard = lazy(() =>
+  import("./components/cards/LearningQACard").then((m) => ({ default: m.LearningQACard }))
+);
+
+const CounselingCard = lazy(() =>
+  import("./components/cards/CounselingCard").then((m) => ({ default: m.CounselingCard }))
+);
+
+const NotesCard = lazy(() =>
+  import("./components/cards/NotesCard").then((m) => ({ default: m.NotesCard }))
+);
+
 export default function App() {
   const { theme, toggleTheme } = useTheme();
   const { bookmarks, addBookmark, removeBookmark, isBookmarked } = useBookmarks();
-  const { profile } = useUser();
+  const { profile, mode, setMode } = useUser();
 
   const [query, setQuery] = useState<string>("");
   const [activeCategory, setActiveCategory] = useState<CategoryType>("overview");
+  const [searchCategory, setSearchCategory] = useState<CategoryType | "all">("all");
   const [loadedCategories, setLoadedCategories] = useState<Set<CategoryType>>(new Set());
+
+  // Counseling Personas Cache & Pre-selection State
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [isLoadingPersonas, setIsLoadingPersonas] = useState(false);
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string | undefined>(undefined);
+
+  // Fetch personas on initial load
+  useEffect(() => {
+    let isMounted = true;
+    const loadPersonas = async () => {
+      setIsLoadingPersonas(true);
+      try {
+        const res = await fetch("/api/personas");
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            setPersonas(data);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch counseling personas:", err);
+      } finally {
+        if (isMounted) setIsLoadingPersonas(false);
+      }
+    };
+    loadPersonas();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Automatically reset category if not allowed in the current mode and reset dropdown on mode switch
+  useEffect(() => {
+    const allowed = mode === "research"
+      ? ["overview", "research", "software", "news", "communities", "related"]
+      : ["overview", "education", "videos", "qa", "counseling"];
+    if (!allowed.includes(activeCategory)) {
+      setActiveCategory("overview");
+    }
+    // On mode switch, dropdown resets to "All Categories"
+    setSearchCategory("all");
+  }, [mode]);
 
   // Modal States
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -56,6 +117,13 @@ export default function App() {
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [isApiDocsOpen, setIsApiDocsOpen] = useState(false);
+
+  // Notes Sidebar state
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const { notes } = useNotes();
+
+  // Routing State
+  const [currentPath, setCurrentPath] = useState<string>(window.location.pathname);
 
   // Entity Resolution State
   const [currentEntity, setCurrentEntity] = useState<Entity | null>(null);
@@ -113,6 +181,7 @@ export default function App() {
   useEffect(() => {
     const syncFromUrl = () => {
       const pathname = window.location.pathname;
+      setCurrentPath(pathname);
       let qParam = "";
       
       if (pathname.startsWith("/topic/")) {
@@ -166,19 +235,48 @@ export default function App() {
     window.history.pushState({}, "", newUrl);
   };
 
-  const handleSearch = (newQuery: string) => {
+  const handleSearch = (newQuery: string, category?: CategoryType | "all") => {
+    const chosenCat = category !== undefined ? category : searchCategory;
+    const catToActivate: CategoryType = (chosenCat && chosenCat !== "all") ? chosenCat : "overview";
+
     setQuery(newQuery);
-    setActiveCategory("overview");
-    setLoadedCategories(new Set(["overview"]));
+    setActiveCategory(catToActivate);
+    setLoadedCategories(new Set([catToActivate]));
+    setSelectedPersonaId(undefined);
+    setSearchCategory(chosenCat || "all");
     addRecentSearch(newQuery);
-    updateUrlParams(newQuery, "overview");
+    updateUrlParams(newQuery, catToActivate);
     fetchEntityData(newQuery);
   };
 
   const handleSelectCategory = (cat: CategoryType) => {
     setActiveCategory(cat);
     setLoadedCategories((prev) => new Set(prev).add(cat));
+    setSearchCategory(cat);
     updateUrlParams(query, cat);
+  };
+
+  const handleSelectSearchCategory = (cat: CategoryType | "all") => {
+    setSearchCategory(cat);
+    if (query && cat !== "all") {
+      setActiveCategory(cat);
+      setLoadedCategories((prev) => new Set(prev).add(cat));
+      updateUrlParams(query, cat);
+    }
+  };
+
+  const handleSelectPersona = (persona: Persona) => {
+    if (mode === "research") {
+      setMode("learning");
+    }
+    setSelectedPersonaId(persona.id);
+    setActiveCategory("counseling");
+    setSearchCategory("counseling");
+    setLoadedCategories((prev) => new Set(prev).add("counseling"));
+    const targetTopic = persona.subject_tag || persona.name || "Academic Counseling";
+    const nextQuery = query || targetTopic;
+    setQuery(nextQuery);
+    updateUrlParams(nextQuery, "counseling");
   };
 
   const handleGoHome = () => {
@@ -186,6 +284,8 @@ export default function App() {
     setActiveCategory("overview");
     setLoadedCategories(new Set());
     setCurrentEntity(null);
+    setSelectedPersonaId(undefined);
+    setSearchCategory("all");
     window.history.pushState({}, "", window.location.pathname);
   };
 
@@ -222,6 +322,14 @@ export default function App() {
   const checkIsBookmarked = (title: string, cat: CategoryType) => {
     return isBookmarked(query, title, cat);
   };
+
+  if (currentPath === "/verify") {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-slate-400">Loading Verification...</div>}>
+        <VerifyPage />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-200">
@@ -265,8 +373,21 @@ export default function App() {
 
             {/* Main Search Bar */}
             <div className="w-full pt-2">
-              <SearchBar onSearch={handleSearch} />
+              <SearchBar
+                onSearch={handleSearch}
+                selectedCategory={searchCategory}
+                onSelectCategory={handleSelectSearchCategory}
+                mode={mode}
+              />
             </div>
+
+            {/* Counseling Personas Suggestions below Search */}
+            <PersonaSuggestions
+              personas={personas}
+              mode={mode}
+              onSelectPersona={handleSelectPersona}
+              isLoading={isLoadingPersonas}
+            />
           </div>
         ) : (
           /* ACTIVE TOPIC EXPLORER VIEW - Clean Layout with Entity Sidebar */
@@ -287,6 +408,9 @@ export default function App() {
                 initialQuery={query}
                 placeholder={`Search another topic (e.g. Gravity, Quantum Computing)...`}
                 isCompact
+                selectedCategory={searchCategory}
+                onSelectCategory={handleSelectSearchCategory}
+                mode={mode}
               />
             </div>
 
@@ -304,29 +428,61 @@ export default function App() {
               
               {/* Category Main Content */}
               <div className="flex-1 min-w-0 w-full">
-                <CategoryViewer
-                  category={activeCategory}
-                  topic={query}
-                  data={data}
-                  isLoading={isLoading}
-                  isLoadingMore={isLoadingMore}
-                  error={error}
-                  isAutoRetrying={isAutoRetrying}
-                  retryCountdown={retryCountdown}
-                  autoRetryCount={autoRetryCount}
-                  hasMore={hasMore}
-                  entity={currentEntity}
-                  rankingScore={rankingScore}
-                  synonymsConnected={synonymsConnected}
-                  onLoadMore={loadMore}
-                  onRetry={refetch}
-                  onBookmarkItem={handleBookmarkItem}
-                  isBookmarkedItem={checkIsBookmarked}
-                  onSelectTopic={handleSearch}
-                  onOpenLogin={() => setIsLoginOpen(true)}
-                  matchMode={matchMode}
-                  onMatchModeChange={setMatchMode}
-                />
+                {activeCategory === "qa" ? (
+                  <Suspense fallback={
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-2xl p-8 text-center space-y-4 shadow-xs">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+                      <p className="text-xs text-slate-500">Loading AI Learning Q&A...</p>
+                    </div>
+                  }>
+                    <LearningQACard />
+                  </Suspense>
+                ) : activeCategory === "counseling" ? (
+                  <Suspense fallback={
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-2xl p-8 text-center space-y-4 shadow-xs">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+                      <p className="text-xs text-slate-500">Loading AI Expert Counseling...</p>
+                    </div>
+                  }>
+                    <CounselingCard
+                      defaultPersonaId={selectedPersonaId}
+                      onClearDefaultPersona={() => setSelectedPersonaId(undefined)}
+                    />
+                  </Suspense>
+                ) : activeCategory === "notes" ? (
+                  <Suspense fallback={
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-2xl p-8 text-center space-y-4 shadow-xs">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+                      <p className="text-xs text-slate-500">Loading Student Notes...</p>
+                    </div>
+                  }>
+                    <NotesCard />
+                  </Suspense>
+                ) : (
+                  <CategoryViewer
+                    category={activeCategory}
+                    topic={query}
+                    data={data}
+                    isLoading={isLoading}
+                    isLoadingMore={isLoadingMore}
+                    error={error}
+                    isAutoRetrying={isAutoRetrying}
+                    retryCountdown={retryCountdown}
+                    autoRetryCount={autoRetryCount}
+                    hasMore={hasMore}
+                    entity={currentEntity}
+                    rankingScore={rankingScore}
+                    synonymsConnected={synonymsConnected}
+                    onLoadMore={loadMore}
+                    onRetry={refetch}
+                    onBookmarkItem={handleBookmarkItem}
+                    isBookmarkedItem={checkIsBookmarked}
+                    onSelectTopic={handleSearch}
+                    onOpenLogin={() => setIsLoginOpen(true)}
+                    matchMode={matchMode}
+                    onMatchModeChange={setMatchMode}
+                  />
+                )}
               </div>
 
               {/* Sidebar Insights Panel */}
@@ -344,8 +500,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Google Login Modal */}
-      <GoogleLoginModal
+      {/* Authentication Modal */}
+      <AuthModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
       />
@@ -403,6 +559,26 @@ export default function App() {
 
       {/* Footer */}
       <Footer />
+
+      {/* Floating Notes Trigger Button */}
+      <button
+        onClick={() => setIsNotesOpen(true)}
+        className="fixed bottom-6 right-6 z-40 p-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center group"
+        title="Open My Notes"
+      >
+        <span className="text-xl">📝</span>
+        {notes.length > 0 && (
+          <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-50 dark:border-slate-950 animate-pulse">
+            {notes.length}
+          </span>
+        )}
+      </button>
+
+      {/* Notes Sidebar Drawer Panel */}
+      <NotesSidePanel
+        isOpen={isNotesOpen}
+        onClose={() => setIsNotesOpen(false)}
+      />
     </div>
   );
 }

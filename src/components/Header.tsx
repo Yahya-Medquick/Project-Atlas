@@ -29,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectCategory,
   currentQuery,
 }) => {
-  const { user, isLoggedIn, logout } = useUser();
+  const { user, isLoggedIn, logout, mode, toggleMode } = useUser();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
@@ -60,6 +60,32 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Minimal Actions Bar */}
         <div className="flex items-center gap-1.5">
+          {/* Research/Learning Mode Segment Selector */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-800/50 text-xs mr-1">
+            <button
+              onClick={() => mode !== "research" && toggleMode()}
+              className={`px-2.5 py-1 rounded-md font-bold transition-all duration-150 flex items-center gap-1 cursor-pointer select-none ${
+                mode === "research"
+                  ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm border-b border-indigo-200/10"
+                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              }`}
+            >
+              <span>🔬</span>
+              <span className="hidden sm:inline">Research</span>
+            </button>
+            <button
+              onClick={() => mode !== "learning" && toggleMode()}
+              className={`px-2.5 py-1 rounded-md font-bold transition-all duration-150 flex items-center gap-1 cursor-pointer select-none ${
+                mode === "learning"
+                  ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm border-b border-indigo-200/10"
+                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              }`}
+            >
+              <span>📚</span>
+              <span className="hidden sm:inline">Learning</span>
+            </button>
+          </div>
+
           {/* Theme Toggle Button */}
           <button
             onClick={toggleTheme}

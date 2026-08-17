@@ -9,7 +9,10 @@ export type CategoryType =
   | 'communities' 
   | 'related'
   | 'recommendations'
-  | 'history';
+  | 'history'
+  | 'qa'
+  | 'counseling'
+  | 'notes';
 
 export interface UserAuth {
   id: string;
@@ -19,6 +22,7 @@ export interface UserAuth {
   avatar_url?: string;
   tier: 'free' | 'logged_out' | 'paid';
   created_at?: string;
+  preferred_mode?: 'research' | 'learning';
 }
 
 export interface TabUsage {
@@ -369,5 +373,15 @@ export interface DeveloperApiEndpoint {
   description: string;
   parameters: Array<{ name: string; type: string; required: boolean; description: string }>;
   exampleResponse: string;
+}
+
+export interface Persona {
+  id: string;
+  name: string;
+  avatar_emoji: string;
+  subject_tag: string;
+  system_prompt: string;
+  is_active: boolean;
+  created_at?: string;
 }
 

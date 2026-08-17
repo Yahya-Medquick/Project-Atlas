@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { EducationData, QuizQuestion } from "../../types";
-import { GraduationCap, CheckCircle2, XCircle, ExternalLink, HelpCircle, Award, Plus, RefreshCw, Sparkles } from "lucide-react";
+import { GraduationCap, CheckCircle2, XCircle, ExternalLink, HelpCircle, Award, Plus, RefreshCw, Sparkles, Check } from "lucide-react";
 import { MultiLevelDefinitionCard } from "../MultiLevelDefinitionCard";
+import { useNotes } from "../../hooks/useNotes";
 
 interface EducationCardProps {
   educationData: EducationData;
@@ -9,6 +10,32 @@ interface EducationCardProps {
 }
 
 export const EducationCard: React.FC<EducationCardProps> = ({ educationData, topic }) => {
+  const { addNote } = useNotes();
+  const [addedMap, setAddedMap] = useState<Record<string | number, boolean>>({});
+
+  const triggerToast = (msg: string) => {
+    const toast = document.createElement("div");
+    toast.className = "fixed bottom-24 right-6 z-50 bg-slate-900 text-white text-xs px-3.5 py-2.5 rounded-xl border border-slate-700 shadow-xl flex items-center gap-1.5 font-medium animate-fade-in";
+    toast.innerHTML = `<span>✓</span> <span>${msg}</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.5s ease";
+      setTimeout(() => toast.remove(), 500);
+    }, 2000);
+  };
+
+  const handleAddNote = async (key: string | number, title: string, content: string) => {
+    try {
+      await addNote(title, content, "Education");
+      setAddedMap((prev) => ({ ...prev, [key]: true }));
+      triggerToast("Added to Notes ✓");
+      setTimeout(() => setAddedMap((prev) => ({ ...prev, [key]: false })), 3000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [showResults, setShowResults] = useState<Record<string, boolean>>({});
   const [quizList, setQuizList] = useState<QuizQuestion[]>(educationData.quizQuestions || []);
@@ -201,7 +228,7 @@ export const EducationCard: React.FC<EducationCardProps> = ({ educationData, top
             {educationData.freeCourses.map((course, idx) => (
               <div
                 key={idx}
-                className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-2xs flex items-start justify-between gap-4"
+                className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-2xs flex flex-col justify-between gap-4"
               >
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
@@ -215,15 +242,28 @@ export const EducationCard: React.FC<EducationCardProps> = ({ educationData, top
                   </p>
                 </div>
 
-                <a
-                  href={course.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs flex items-center gap-1 shrink-0 shadow-xs transition-colors"
-                >
-                  <span>Explore</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={() => {
+                      const content = `Course: ${course.title}\nPlatform: ${course.platform}\nLevel: ${course.level}\nDescription: ${course.description}\nLink: ${course.url}`;
+                      handleAddNote(`course-${idx}`, `Course: ${course.title}`, content);
+                    }}
+                    className="flex-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {addedMap[`course-${idx}`] ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Plus className="w-3.5 h-3.5" />}
+                    <span>{addedMap[`course-${idx}`] ? "Added" : "+ Notes"}</span>
+                  </button>
+
+                  <a
+                    href={course.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs flex items-center justify-center gap-1 transition-colors"
+                  >
+                    <span>Explore</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
               </div>
             ))}
           </div>

@@ -1,6 +1,6 @@
-# Project Atlas — Production Deployment Guide
+# Bifrost AI — Production Deployment Guide
 
-This guide details the step-by-step procedures for deploying **Project Atlas | Universal Knowledge Engine** into high-availability production environments.
+This guide details the step-by-step procedures for deploying **Bifrost AI | Universal Knowledge Engine** into high-availability production environments, with a primary focus on Railway.
 
 ---
 
@@ -16,12 +16,12 @@ This guide details the step-by-step procedures for deploying **Project Atlas | U
 
 ## 2. Environment Configuration
 
-Copy `.env.example` to `.env` or set environment variables in your container deployment service (Google Cloud Run, AWS ECS, Kubernetes, Vercel, Render):
+Copy `.env.example` to `.env` or set environment variables in your container deployment service (Railway, Google Cloud Run, AWS ECS, Kubernetes):
 
 ```env
 NODE_ENV="production"
 PORT=3000
-APP_URL="https://your-domain.com"
+APP_URL="https://bifrostai.up.railway.app"
 GEMINI_API_KEY="your-gemini-api-key"
 ADMIN_TOKEN="your-custom-secure-admin-token"
 OPENALEX_MAILTO="admin@your-domain.com"
@@ -51,22 +51,57 @@ npm start
 
 ---
 
-## 4. Containerized Deployment with Docker
+## 4. Deploying to Railway (Recommended)
+
+Railway is the primary cloud host for Bifrost AI, serving traffic at **`bifrostai.up.railway.app`**.
+
+### Step 1: Push Code to GitHub
+Ensure your repository is initialized and pushed to a remote GitHub repository.
+```bash
+git init
+git add .
+git commit -m "feat: initial commit for Bifrost AI"
+git remote add origin https://github.com/yourusername/bifrost-ai.git
+git branch -M main
+git push -u origin main
+```
+
+### Step 2: Provision a New Project on Railway
+1. Go to [Railway](https://railway.app) and log in.
+2. Click **New Project** and select **Deploy from GitHub repo**.
+3. Choose your `bifrost-ai` repository.
+
+### Step 3: Configure Environment Variables
+In the **Variables** tab of your Railway service, add the following parameters:
+- `NODE_ENV`: `production`
+- `PORT`: `3000`
+- `APP_URL`: `https://bifrostai.up.railway.app`
+- `GEMINI_API_KEY`: *(Your Google Gemini API Key)*
+- `ADMIN_TOKEN`: *(A custom secure password string for your Admin panel)*
+
+### Step 4: Verify Deployment
+Railway will automatically detect the root `Dockerfile`, build the multi-stage image, and expose the domain at `bifrostai.up.railway.app`. Verify that:
+- `/api/v1/health` returns status `{ "status": "healthy" }`
+- The front-end interface loads with full responsive capabilities.
+
+---
+
+## 5. Containerized Deployment with Docker (Manual)
 
 ### A. Build Docker Image
 ```bash
-docker build -t project-atlas:latest .
+docker build -t bifrost-ai:latest .
 ```
 
 ### B. Test Docker Container Locally
 ```bash
 docker run -d \
-  --name atlas-prod \
+  --name bifrost-prod \
   -p 3000:3000 \
   -e NODE_ENV=production \
   -e GEMINI_API_KEY="your-gemini-key" \
   -e ADMIN_TOKEN="your-admin-token" \
-  project-atlas:latest
+  bifrost-ai:latest
 ```
 
 ### C. Verify Container Health
@@ -76,19 +111,19 @@ curl http://localhost:3000/api/v1/health
 
 ---
 
-## 5. Cloud Platform Deployments
+## 6. Alternative Cloud Platform Deployments
 
-### Option A: Google Cloud Run (Recommended)
+### Option A: Google Cloud Run
 ```bash
 # 1. Authenticate with Google Cloud
 gcloud auth login
 
 # 2. Build and Submit to Artifact Registry
-gcloud builds submit --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/atlas/explorer:v1.0.0
+gcloud builds submit --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/bifrost/explorer:v1.0.0
 
 # 3. Deploy Service to Cloud Run
-gcloud run deploy project-atlas \
-  --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/atlas/explorer:v1.0.0 \
+gcloud run deploy bifrost-ai \
+  --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/bifrost/explorer:v1.0.0 \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
@@ -97,35 +132,35 @@ gcloud run deploy project-atlas \
   --max-instances 10 \
   --cpu 1 \
   --memory 512Mi \
-  --set-env-vars "NODE_ENV=production,APP_URL=https://project-atlas.app" \
+  --set-env-vars "NODE_ENV=production,APP_URL=https://bifrostai.up.railway.app" \
   --set-secrets "GEMINI_API_KEY=GEMINI_KEY_SECRET:latest,ADMIN_TOKEN=ADMIN_TOKEN_SECRET:latest"
 ```
 
-### Option B: Kubernetes (Helm / Manifests)
+### Option B: Kubernetes
 Apply deployment and service manifests:
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: project-atlas
+  name: bifrost-ai
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: project-atlas
+      app: bifrost-ai
   template:
     metadata:
       labels:
-        app: project-atlas
+        app: bifrost-ai
     spec:
       containers:
       - name: explorer
-        image: project-atlas:latest
+        image: bifrost-ai:latest
         ports:
         - containerPort: 3000
         envFrom:
         - secretRef:
-            name: atlas-secrets
+            name: bifrost-secrets
         livenessProbe:
           httpGet:
             path: /api/v1/health
@@ -149,17 +184,17 @@ spec:
 
 ---
 
-## 6. Reverse Proxy & SSL/TLS Configuration (Nginx)
+## 7. Reverse Proxy & SSL/TLS Configuration (Nginx)
 
-When deploying behind an Nginx gateway:
+When deploying behind an Nginx gateway manually:
 
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name project-atlas.app;
+    server_name bifrostai.up.railway.app;
 
-    ssl_certificate /etc/letsencrypt/live/project-atlas.app/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/project-atlas.app/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/bifrostai.up.railway.app/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bifrostai.up.railway.app/privkey.pem;
 
     # Security Headers
     add_header X-Frame-Options "SAMEORIGIN" always;
@@ -181,11 +216,10 @@ server {
 
 ---
 
-## 7. Automated Continuous Integration & Delivery (CI/CD)
+## 8. Automated Continuous Integration & Delivery (CI/CD)
 
 The repository includes a GitHub Actions workflow `.github/workflows/ci.yml` that automatically:
 1. Performs static analysis (`tsc --noEmit`).
 2. Executes automated tests (`vitest run`).
 3. Compiles production assets (`npm run build`).
 4. Verifies multi-stage Docker build.
-5. Deploys container artifacts directly to Google Cloud Run upon pushes to `main`.

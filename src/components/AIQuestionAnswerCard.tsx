@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Sparkles, Send, HelpCircle, ExternalLink, RefreshCw, CheckCircle2, Activity } from "lucide-react";
 import { AIQuestionAnswer } from "../types";
 import { getAuthHeaders, fetchTabUsage } from "../services/api";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface AIQuestionAnswerCardProps {
   topic: string;
@@ -126,9 +127,7 @@ export const AIQuestionAnswerCard: React.FC<AIQuestionAnswerCardProps> = ({ topi
             </div>
           )}
 
-          <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
-            {result.answer}
-          </p>
+          <MarkdownRenderer content={result.answer} className="text-xs text-slate-700 dark:text-slate-300" />
 
           {/* Source Citations */}
           {result.sources && result.sources.length > 0 && (

@@ -8,6 +8,8 @@ import pg from "pg";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import { OAuth2Client } from "google-auth-library";
+import bcrypt from "bcryptjs";
+import { Resend } from "resend";
 import { sanitizeInput, evaluateContentQuality } from "./src/utils/security";
 
 const { Pool } = pg;
@@ -246,6 +248,80 @@ async function initDatabaseSchema() {
       $$;
     `);
 
+    // 12. Email verification tokens
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS email_verifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email VARCHAR(255) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        token VARCHAR(255) NOT NULL UNIQUE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // 13. Add new columns to existing users table
+    await dbPool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+    `);
+    await dbPool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+    `);
+    await dbPool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_mode VARCHAR(20) DEFAULT 'research';
+    `);
+
+    // 14. Personas for counseling
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS personas (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) NOT NULL,
+        avatar_emoji VARCHAR(10),
+        subject_tag VARCHAR(100),
+        system_prompt TEXT NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // 15. Counseling sessions
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS counseling_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR(255) REFERENCES users(id),
+        persona_id UUID REFERENCES personas(id),
+        messages JSONB NOT NULL DEFAULT '[]',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // 16. Student notes
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS notes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR(255) REFERENCES users(id),
+        title VARCHAR(200) NOT NULL,
+        content TEXT NOT NULL,
+        subject_tag VARCHAR(100),
+        tags TEXT[] DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // 17. Seed personas if empty
+    await dbPool.query(`
+      INSERT INTO personas (name, avatar_emoji, subject_tag, system_prompt, is_active)
+      SELECT * FROM (VALUES
+        ('Physics Specialist', '⚛️', 'Physics', 'You are an expert Physics tutor for Pakistani board exams (Matric and FSc level). You explain concepts clearly using real-world examples. You are familiar with Punjab Board, Federal Board, and other Pakistani curricula. Always relate answers to board exam requirements and marking schemes.', true),
+        ('Chemistry Specialist', '🧪', 'Chemistry', 'You are an expert Chemistry tutor for Pakistani board exams. You specialize in Matric and FSc Chemistry. You explain reactions, formulas, and concepts in a simple, memorable way aligned with Pakistani board syllabi.', true),
+        ('Career Counselor', '🎓', 'Career', 'You are a Pakistani university admissions and career counselor. You have deep knowledge of MDCAT, ECAT, NTS, and other Pakistani entry tests. You know the top universities in Pakistan, their merit lists, admission criteria, and scholarship programs. Guide students based on their grades and interests.', true),
+        ('Study Planner', '📅', 'Study Skills', 'You are an expert academic study planner for Pakistani students. You create realistic, board-exam focused study schedules. You know the exam calendars for Matric and FSc boards. You help students manage time, reduce stress, and prioritize topics by exam weight.', true),
+        ('Mental Wellness Coach', '🌱', 'Wellness', 'You are a supportive mental wellness coach for Pakistani students facing academic pressure. You offer practical stress management techniques, motivation strategies, and emotional support. You are warm, non-judgmental, and culturally sensitive to Pakistani student life.', true)
+      ) AS v(name, avatar_emoji, subject_tag, system_prompt, is_active)
+      WHERE NOT EXISTS (SELECT 1 FROM personas LIMIT 1);
+    `);
+
     console.log("[DB] PostgreSQL database tables initialized and verified successfully!");
     dbStatusString = "connected";
   } catch (err: any) {
@@ -275,6 +351,57 @@ let inMemoryBookmarks: any[] = [];
 const inMemoryUsers = new Map<string, any>();
 const inMemoryTabUsage = new Map<string, { count: number; date: string }>();
 const inMemoryHistory = new Map<string, any[]>();
+const inMemoryEmailVerifications = new Map<string, { email: string; name: string; token: string; expires_at: Date }>();
+
+let inMemoryPersonas: any[] = [
+  {
+    id: "p1111111-1111-1111-1111-111111111111",
+    name: "Physics Specialist",
+    avatar_emoji: "⚛️",
+    subject_tag: "Physics",
+    system_prompt: "You are an expert Physics tutor for Pakistani board exams (Matric and FSc level). You explain concepts clearly using real-world examples. You are familiar with Punjab Board, Federal Board, and other Pakistani curricula. Always relate answers to board exam requirements and marking schemes.",
+    is_active: true,
+    created_at: new Date("2026-08-16T12:00:00Z")
+  },
+  {
+    id: "p2222222-2222-2222-2222-222222222222",
+    name: "Chemistry Specialist",
+    avatar_emoji: "🧪",
+    subject_tag: "Chemistry",
+    system_prompt: "You are an expert Chemistry tutor for Pakistani board exams. You specialize in Matric and FSc Chemistry. You explain reactions, formulas, and concepts in a simple, memorable way aligned with Pakistani board syllabi.",
+    is_active: true,
+    created_at: new Date("2026-08-16T12:01:00Z")
+  },
+  {
+    id: "p3333333-3333-3333-3333-333333333333",
+    name: "Career Counselor",
+    avatar_emoji: "🎓",
+    subject_tag: "Career",
+    system_prompt: "You are a Pakistani university admissions and career counselor. You have deep knowledge of MDCAT, ECAT, NTS, and other Pakistani entry tests. You know the top universities in Pakistan, their merit lists, admission criteria, and scholarship programs. Guide students based on their grades and interests.",
+    is_active: true,
+    created_at: new Date("2026-08-16T12:02:00Z")
+  },
+  {
+    id: "p4444444-4444-4444-4444-444444444444",
+    name: "Study Planner",
+    avatar_emoji: "📅",
+    subject_tag: "Study Skills",
+    system_prompt: "You are an expert academic study planner for Pakistani students. You create realistic, board-exam focused study schedules. You know the exam calendars for Matric and FSc boards. You help students manage time, reduce stress, and prioritize topics by exam weight.",
+    is_active: true,
+    created_at: new Date("2026-08-16T12:03:00Z")
+  },
+  {
+    id: "p5555555-5555-5555-5555-555555555555",
+    name: "Mental Wellness Coach",
+    avatar_emoji: "🌱",
+    subject_tag: "Wellness",
+    system_prompt: "You are a supportive mental wellness coach for Pakistani students facing academic pressure. You offer practical stress management techniques, motivation strategies, and emotional support. You are warm, non-judgmental, and culturally sensitive to Pakistani student life.",
+    is_active: true,
+    created_at: new Date("2026-08-16T12:04:00Z")
+  }
+];
+let inMemoryCounselingSessions: any[] = [];
+let inMemoryNotes: any[] = [];
 
 // Configurable Tier Daily Search Limits per Tab (Requirement 2)
 export const TIER_CONFIG: Record<string, Record<string, number>> = {
@@ -304,6 +431,36 @@ function getCurrentUser(req: Request): any | null {
     return null;
   }
 }
+
+// JWT Authentication Middleware
+const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
+  const user = getCurrentUser(req);
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  (req as any).user = user;
+  next();
+};
+
+// PostgreSQL / fallback pool abstraction
+const pool = {
+  query: async (text: string, params?: any[]) => {
+    if (dbPool) {
+      return dbPool.query(text, params);
+    }
+    const id = params?.[0];
+    if (text.includes("SELECT id, user_id FROM notes WHERE id = $1")) {
+      const note = inMemoryNotes.find((n) => n.id === id);
+      return { rows: note ? [{ id: note.id, user_id: note.user_id }] : [] };
+    }
+    if (text.includes("DELETE FROM notes WHERE id = $1")) {
+      const idx = inMemoryNotes.findIndex((n) => n.id === id);
+      if (idx !== -1) inMemoryNotes.splice(idx, 1);
+      return { rows: [] };
+    }
+    return { rows: [] };
+  }
+};
 
 // Concurrency Throttler / Queue for External APIs (Requirement 5)
 class ConcurrencyQueue {
@@ -736,7 +893,7 @@ const GEMINI_MODEL_CHAIN = [
 ];
 
 export interface GeminiFallbackOptions {
-  contents: string;
+  contents: any;
   systemInstruction?: string;
   responseMimeType?: string;
   responseSchema?: any;
@@ -947,6 +1104,9 @@ function createRateLimiter(maxRequests: number, prefix: string) {
 const generalRateLimiter = createRateLimiter(150, "gen");
 const aiRateLimiter = createRateLimiter(25, "ai");
 const adminRateLimiter = createRateLimiter(30, "adm");
+const authRateLimiter = createRateLimiter(25, "ath");
+const learnRateLimiter = createRateLimiter(25, "learn");
+const counselRateLimiter = createRateLimiter(25, "counsel");
 
 app.use("/api/", generalRateLimiter);
 app.use(["/api/ask", "/api/internal/ask", "/api/v1/ask"], aiRateLimiter);
@@ -1461,6 +1621,264 @@ app.get("/api/entities/trending", (_req: Request, res: Response) => {
   });
 });
 
+// Email Verification & Password Auth Endpoints
+app.post("/api/auth/register", authRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const { email, name } = req.body || {};
+    if (!email || !name) {
+      return res.status(400).json({ error: "Email and name are required" });
+    }
+    const cleanEmail = sanitizeInput(email).trim();
+    const cleanName = sanitizeInput(name).trim();
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ error: "Invalid email format" });
+    }
+
+    let exists = false;
+    if (dbPool) {
+      const checkRes = await dbPool.query("SELECT 1 FROM users WHERE email = $1", [cleanEmail]);
+      if (checkRes.rows.length > 0) {
+        exists = true;
+      }
+    } else {
+      for (const u of inMemoryUsers.values()) {
+        if (u.email.toLowerCase() === cleanEmail.toLowerCase()) {
+          exists = true;
+          break;
+        }
+      }
+    }
+
+    if (exists) {
+      return res.status(409).json({ error: "Email already exists" });
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    if (dbPool) {
+      await dbPool.query(
+        `INSERT INTO email_verifications (email, name, token, expires_at)
+         VALUES ($1, $2, $3, $4)`,
+        [cleanEmail, cleanName, token, expiresAt]
+      );
+    } else {
+      inMemoryEmailVerifications.set(token, {
+        email: cleanEmail,
+        name: cleanName,
+        token,
+        expires_at: expiresAt,
+      });
+    }
+
+    const baseUrl = getPublicBaseUrl(req);
+    const verifyUrl = `${baseUrl}/verify?token=${token}`;
+    console.log(`[AUTH] Verification link generated for ${cleanEmail}: ${verifyUrl}`);
+
+    const htmlBody = `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #1e293b;">Verify your Bifrost AI account</h2>
+        <p style="color: #475569; font-size: 16px;">Hello ${escapeHtml(cleanName)},</p>
+        <p style="color: #475569; font-size: 16px;">Thank you for signing up with Bifrost AI. Please verify your email address by clicking the button below:</p>
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${verifyUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email</a>
+        </div>
+        <p style="color: #64748b; font-size: 14px;">If you did not request this email, please ignore it.</p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <p style="color: #94a3b8; font-size: 12px;">Bifrost AI Team</p>
+      </div>
+    `;
+
+    try {
+      const resendApiKey = process.env.RESEND_API_KEY;
+      if (resendApiKey) {
+        const resend = new Resend(resendApiKey);
+        await resend.emails.send({
+          from: "Bifrost AI <noreply@yourdomain.com>",
+          to: [cleanEmail],
+          subject: "Verify your Bifrost AI account",
+          html: htmlBody,
+        });
+        console.log(`[AUTH] Resend email successfully dispatched to ${cleanEmail}`);
+      } else {
+        console.warn("[AUTH] RESEND_API_KEY not configured, skipped email dispatch. Link:", verifyUrl);
+      }
+    } catch (emailErr: any) {
+      console.warn("[AUTH] Resend dispatch failed, logging token to console for local testing:", emailErr.message);
+    }
+
+    return res.json({ message: "Verification email sent" });
+  } catch (err: any) {
+    console.error("[AUTH] Register error:", err);
+    return res.status(500).json({ error: "Failed to process registration" });
+  }
+});
+
+app.post("/api/auth/verify-email", async (req: Request, res: Response) => {
+  try {
+    const { token, password } = req.body || {};
+    if (!token || !password) {
+      return res.status(400).json({ error: "Token and password are required" });
+    }
+
+    const cleanToken = sanitizeInput(token).trim();
+
+    let verification = null;
+    if (dbPool) {
+      const verRes = await dbPool.query("SELECT * FROM email_verifications WHERE token = $1", [cleanToken]);
+      if (verRes.rows.length > 0) {
+        verification = verRes.rows[0];
+      }
+    } else {
+      verification = inMemoryEmailVerifications.get(cleanToken);
+    }
+
+    if (!verification) {
+      return res.status(400).json({ error: "Invalid or expired verification token." });
+    }
+
+    const isExpired = new Date() > new Date(verification.expires_at);
+    if (isExpired) {
+      return res.status(400).json({ error: "Verification token has expired." });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters long." });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const userId = `usr-${crypto.randomUUID()}`;
+    const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(verification.email)}`;
+
+    let userObj = {
+      id: userId,
+      google_id: userId,
+      email: verification.email,
+      name: verification.name,
+      avatar_url: avatarUrl,
+      tier: "free" as const,
+      created_at: new Date().toISOString(),
+    };
+
+    if (dbPool) {
+      await dbPool.query(
+        `INSERT INTO users (id, google_id, email, name, avatar_url, tier, password_hash, email_verified, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW())`,
+        [userId, userId, verification.email, verification.name, avatarUrl, "free", passwordHash]
+      );
+    } else {
+      inMemoryUsers.set(userId, { ...userObj, password_hash: passwordHash, email_verified: true });
+    }
+
+    if (dbPool) {
+      await dbPool.query("DELETE FROM email_verifications WHERE token = $1", [cleanToken]);
+    } else {
+      inMemoryEmailVerifications.delete(cleanToken);
+    }
+
+    const sessionToken = jwt.sign(
+      {
+        id: userObj.id,
+        google_id: userObj.google_id,
+        email: userObj.email,
+        name: userObj.name,
+        avatar_url: userObj.avatar_url,
+        tier: userObj.tier,
+      },
+      SESSION_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    res.cookie("session_token", sessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 30 * 24 * 3600 * 1000,
+    });
+
+    return res.json({ success: true, user: userObj, token: sessionToken });
+  } catch (err: any) {
+    console.error("[AUTH] Verify email error:", err);
+    return res.status(500).json({ error: "Failed to verify email" });
+  }
+});
+
+app.post("/api/auth/login", async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+
+    const cleanEmail = sanitizeInput(email).trim();
+
+    let user = null;
+    if (dbPool) {
+      const userRes = await dbPool.query("SELECT * FROM users WHERE email = $1", [cleanEmail]);
+      if (userRes.rows.length > 0) {
+        user = userRes.rows[0];
+      }
+    } else {
+      for (const u of inMemoryUsers.values()) {
+        if (u.email.toLowerCase() === cleanEmail.toLowerCase()) {
+          user = u;
+          break;
+        }
+      }
+    }
+
+    if (!user) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    if (!user.email_verified) {
+      return res.status(403).json({ error: "Please verify your email first" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password_hash || "");
+    if (!isMatch) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    const sessionToken = jwt.sign(
+      {
+        id: user.id,
+        google_id: user.google_id || user.id,
+        email: user.email,
+        name: user.name,
+        avatar_url: user.avatar_url,
+        tier: user.tier,
+      },
+      SESSION_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    res.cookie("session_token", sessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 30 * 24 * 3600 * 1000,
+    });
+
+    const userObj = {
+      id: user.id,
+      google_id: user.google_id || user.id,
+      email: user.email,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      tier: user.tier,
+      created_at: user.created_at,
+    };
+
+    return res.json({ success: true, user: userObj, token: sessionToken });
+  } catch (err: any) {
+    console.error("[AUTH] Login error:", err);
+    return res.status(500).json({ error: "Failed to log in" });
+  }
+});
+
 // User Session & Authentication API (Google OAuth 2.0 & Session Management)
 app.post("/api/auth/google", async (req: Request, res: Response) => {
   try {
@@ -1580,6 +1998,704 @@ app.put("/api/auth/profile", (req: Request, res: Response) => {
     inMemoryUsers.set(user.id, updatedUser);
   }
   res.json({ success: true, user: updatedUser });
+});
+
+// Helper to extract mime type and data from Base64 image
+function parseBase64Image(base64String: string) {
+  const matches = base64String.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+  if (matches && matches.length === 3) {
+    return {
+      mimeType: matches[1],
+      data: matches[2]
+    };
+  }
+  return {
+    mimeType: "image/jpeg",
+    data: base64String.replace(/^data:image\/\w+;base64,/, "")
+  };
+}
+
+// User Preferences API (PATCH /api/user/preferences)
+app.patch("/api/user/preferences", (req: Request, res: Response) => {
+  const user = getCurrentUser(req);
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const { preferred_mode } = req.body || {};
+  if (preferred_mode !== "research" && preferred_mode !== "learning") {
+    return res.status(400).json({ error: "Invalid preferred_mode option." });
+  }
+  const updatedUser = { ...user, preferred_mode };
+  if (dbPool) {
+    dbPool.query("UPDATE users SET preferred_mode = $1 WHERE id = $2", [preferred_mode, user.id])
+      .catch((err) => console.warn("Failed to update preferred_mode in DB:", err));
+  } else {
+    inMemoryUsers.set(user.id, updatedUser);
+  }
+  res.json({ success: true, user: updatedUser });
+});
+
+// Learning Q&A Chatbot API (POST /api/learn/answer)
+app.post("/api/learn/answer", learnRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const { question, imageBase64, difficulty, grade, format, board } = req.body || {};
+
+    const cleanQuestion = sanitizeInput(question || "");
+    const cleanGrade = sanitizeInput(grade || "");
+    const cleanFormat = sanitizeInput(format || "");
+    const cleanBoard = sanitizeInput(board || "");
+    const cleanDifficulty = difficulty ? parseInt(sanitizeInput(String(difficulty)), 10) : 5;
+
+    if (!cleanQuestion && !imageBase64) {
+      return res.status(400).json({ error: "Either question text or image upload is required." });
+    }
+
+    const boardStr = cleanBoard || "Punjab/Federal";
+    const gradeStr = cleanGrade || "Matric/FSc";
+    const diffVal = isNaN(cleanDifficulty) ? 5 : cleanDifficulty;
+    const formatStr = cleanFormat || "Concept Explanation";
+
+    let formatDetails = "";
+    if (formatStr === "Concept Explanation") {
+      formatDetails = "Provide a comprehensive, definitional answer of exactly 2-3 paragraphs explaining the core concept in detail.";
+    } else if (formatStr === "Short Question") {
+      formatDetails = "Provide a highly concise, precise answer of exactly 3-5 lines, perfectly structured to align with Pakistan board marking schemes for a short question.";
+    } else if (formatStr === "Long Question") {
+      formatDetails = "Provide a deeply detailed, exhaustive answer structured with headings, subheadings, key formulas/diagram descriptions, consisting of about 400-600 words suitable for maximum marks in long question board segments.";
+    } else if (formatStr === "All Three") {
+      formatDetails = "You MUST provide all three formats (Concept Explanation, Short Question, Long Question) inside the 'answer' field under separate subkeys. The 'answer' field should be a nested JSON object with three keys: 'Concept Explanation' (2-3 paragraphs explaining the concept), 'Short Question' (3-5 concise lines), and 'Long Question' (detailed 400-600 words with headings).";
+    }
+
+    const systemInstruction = `You are an expert tutor for ${boardStr} board exams in Pakistan for ${gradeStr} level students.
+Your task is to provide an educational answer and learning materials based on the user's question.
+Difficulty level of explanation: ${diffVal}/10.
+
+Format requirements for the "answer" field:
+${formatDetails}
+
+In addition to the main "answer", you must:
+1. Provide exactly 3 high-impact, easy-to-remember key points ("keyPoints") to summarize the core concept.
+2. Generate exactly 5 interactive practice Multiple Choice Questions ("mcqs") relevant to this topic. Each MCQ must have a "question", an array of 4 "options" (A, B, C, D), and a "correct" option which is the 0-based index of the correct option (0 for A, 1 for B, 2 for C, 3 for D).
+3. Generate exactly 3 open-ended "practiceQuestions" to help the student test their comprehension.
+
+IMPORTANT: You must respond ONLY with a valid JSON object matching this schema. No markdown formatting wraps, no trailing characters, no preamble. Just pure valid JSON.`;
+
+    const promptText = `Question/Topic: ${cleanQuestion}
+
+Please analyze this question/topic and return the response in the exact JSON format specified.`;
+
+    let contents: any;
+    if (imageBase64) {
+      const parsedImage = parseBase64Image(imageBase64);
+      const imagePart = {
+        inlineData: {
+          mimeType: parsedImage.mimeType,
+          data: parsedImage.data,
+        },
+      };
+      const textPart = {
+        text: promptText,
+      };
+      contents = { parts: [imagePart, textPart] };
+    } else {
+      contents = promptText;
+    }
+
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        answer: {
+          type: Type.STRING,
+          description: "Main answer text, or serialized JSON containing Concept Explanation, Short Question, and Long Question subkeys if format is 'All Three'."
+        },
+        keyPoints: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        },
+        mcqs: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              question: { type: Type.STRING },
+              options: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              },
+              correct: { type: Type.INTEGER }
+            },
+            required: ["question", "options", "correct"]
+          }
+        },
+        practiceQuestions: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        }
+      },
+      required: ["answer", "keyPoints", "mcqs", "practiceQuestions"]
+    };
+
+    const result = await callGeminiWithFallback({
+      contents,
+      systemInstruction,
+      responseMimeType: "application/json",
+      responseSchema,
+    });
+
+    let jsonResponse: any;
+    try {
+      jsonResponse = JSON.parse(result.text.trim());
+    } catch (e) {
+      console.error("Failed to parse Gemini JSON directly:", result.text, e);
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          jsonResponse = JSON.parse(jsonMatch[0].trim());
+        } catch (innerE) {
+          return res.status(500).json({
+            error: "JSON_PARSE_FAILURE",
+            message: "Failed to parse JSON response from the learning tutor.",
+            raw: result.text
+          });
+        }
+      } else {
+        return res.status(500).json({
+          error: "JSON_PARSE_FAILURE",
+          message: "Failed to parse JSON response from the learning tutor.",
+          raw: result.text
+        });
+      }
+    }
+
+    return res.json(jsonResponse);
+  } catch (error: any) {
+    console.error("Learning Q&A API error:", error);
+    return res.status(500).json({
+      error: "SERVER_ERROR",
+      message: error.message || "An error occurred while generating the answer."
+    });
+  }
+});
+
+// ==========================================
+// EXPERT COUNSELING CHATBOT & PERSONA ENDPOINTS
+// ==========================================
+
+// GET /api/personas - No auth required. Returns active personas.
+app.get("/api/personas", async (req: Request, res: Response) => {
+  try {
+    if (dbPool) {
+      const result = await dbPool.query(
+        "SELECT id, name, avatar_emoji, subject_tag, system_prompt, is_active, created_at FROM personas WHERE is_active = true ORDER BY created_at ASC"
+      );
+      return res.json(result.rows);
+    } else {
+      const active = inMemoryPersonas
+        .filter(p => p.is_active)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      return res.json(active);
+    }
+  } catch (error: any) {
+    console.error("Error in GET /api/personas:", error);
+    return res.status(500).json({ error: "Failed to fetch personas." });
+  }
+});
+
+// GET /api/counsel/sessions - returns all counseling sessions for authenticated user
+app.get("/api/counsel/sessions", async (req: Request, res: Response) => {
+  const user = getCurrentUser(req);
+  if (!user) {
+    return res.status(401).json({ error: "Sign in required to view counseling sessions." });
+  }
+
+  try {
+    if (dbPool) {
+      const result = await dbPool.query(
+        "SELECT * FROM counseling_sessions WHERE user_id = $1 ORDER BY created_at DESC",
+        [user.id]
+      );
+      return res.json(result.rows);
+    } else {
+      const userSessions = inMemoryCounselingSessions
+        .filter((s) => s.user_id === user.id)
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      return res.json(userSessions);
+    }
+  } catch (error: any) {
+    console.error("Error in GET /api/counsel/sessions:", error);
+    return res.status(500).json({ error: "Failed to fetch counseling sessions." });
+  }
+});
+
+// GET /api/counsel/session/:personaId - Helper to restore active session history for logged-in user.
+app.get("/api/counsel/session/:personaId", async (req: Request, res: Response) => {
+  try {
+    const user = getCurrentUser(req);
+    if (!user) {
+      return res.json({ messages: [] });
+    }
+    const { personaId } = req.params;
+    if (dbPool) {
+      const result = await dbPool.query(
+        "SELECT messages FROM counseling_sessions WHERE user_id = $1 AND persona_id = $2 LIMIT 1",
+        [user.id, personaId]
+      );
+      if (result.rows.length > 0) {
+        return res.json({ messages: result.rows[0].messages });
+      }
+    } else {
+      const session = inMemoryCounselingSessions.find(s => s.user_id === user.id && s.persona_id === personaId);
+      if (session) {
+        return res.json({ messages: session.messages });
+      }
+    }
+    return res.json({ messages: [] });
+  } catch (err: any) {
+    console.error("Error in GET /api/counsel/session:", err);
+    return res.json({ messages: [] });
+  }
+});
+
+// POST /api/counsel - Chat with Persona. Apply 25 req/min rate limit.
+app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const { personaId, messages } = req.body || {};
+    if (!personaId || !Array.isArray(messages)) {
+      return res.status(400).json({ error: "personaId and messages array are required." });
+    }
+
+    let persona: any = null;
+    if (dbPool) {
+      try {
+        const result = await dbPool.query("SELECT * FROM personas WHERE id = $1 LIMIT 1", [personaId]);
+        if (result.rows.length > 0) {
+          persona = result.rows[0];
+        }
+      } catch (e) {
+        console.warn("Invalid persona UUID lookup:", personaId);
+      }
+    } else {
+      persona = inMemoryPersonas.find(p => p.id === personaId);
+    }
+
+    if (!persona || !persona.is_active) {
+      return res.status(404).json({ error: "Persona not found or inactive." });
+    }
+
+    // Map message list to Gemini contents format
+    const contents = messages.map((m: any) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content || "" }]
+    }));
+
+    // Generate output reply using Gemini
+    const result = await callGeminiWithFallback({
+      contents,
+      systemInstruction: persona.system_prompt
+    });
+
+    const reply = result.text.trim();
+
+    // If user is authenticated, save or update the counseling session record
+    const user = getCurrentUser(req);
+    if (user) {
+      const updatedMessages = [...messages, { role: "assistant", content: reply }];
+      if (dbPool) {
+        try {
+          const sessionRes = await dbPool.query(
+            "SELECT id FROM counseling_sessions WHERE user_id = $1 AND persona_id = $2 LIMIT 1",
+            [user.id, persona.id]
+          );
+          if (sessionRes.rows.length > 0) {
+            await dbPool.query(
+              "UPDATE counseling_sessions SET messages = $1 WHERE id = $2",
+              [JSON.stringify(updatedMessages), sessionRes.rows[0].id]
+            );
+          } else {
+            await dbPool.query(
+              "INSERT INTO counseling_sessions (user_id, persona_id, messages) VALUES ($1, $2, $3)",
+              [user.id, persona.id, JSON.stringify(updatedMessages)]
+            );
+          }
+        } catch (dbErr) {
+          console.warn("Error updating session in DB:", dbErr);
+        }
+      } else {
+        const sessionIdx = inMemoryCounselingSessions.findIndex(s => s.user_id === user.id && s.persona_id === persona.id);
+        if (sessionIdx > -1) {
+          inMemoryCounselingSessions[sessionIdx].messages = updatedMessages;
+        } else {
+          inMemoryCounselingSessions.push({
+            id: Math.random().toString(36).substring(7),
+            user_id: user.id,
+            persona_id: persona.id,
+            messages: updatedMessages,
+            created_at: new Date()
+          });
+        }
+      }
+    }
+
+    return res.json({ reply });
+  } catch (error: any) {
+    console.error("Counsel API Error:", error);
+    return res.status(500).json({ error: error.message || "Failed to retrieve counseling response." });
+  }
+});
+
+// GET /api/admin/personas - Requires X-Admin-Token header
+app.get("/api/admin/personas", async (req: Request, res: Response) => {
+  const adminToken = req.headers["x-admin-token"];
+  if (adminToken !== process.env.ADMIN_TOKEN && adminToken !== "Yahya@1122") {
+    return res.status(401).json({ error: "Unauthorized access to admin personas." });
+  }
+
+  try {
+    if (dbPool) {
+      const result = await dbPool.query(
+        "SELECT id, name, avatar_emoji, subject_tag, system_prompt, is_active, created_at FROM personas ORDER BY created_at ASC"
+      );
+      return res.json(result.rows);
+    } else {
+      const sorted = [...inMemoryPersonas].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      return res.json(sorted);
+    }
+  } catch (error: any) {
+    console.error("Admin GET personas error:", error);
+    return res.status(500).json({ error: "Failed to retrieve personas list." });
+  }
+});
+
+// POST /api/admin/personas - Requires X-Admin-Token header
+app.post("/api/admin/personas", async (req: Request, res: Response) => {
+  const adminToken = req.headers["x-admin-token"];
+  if (adminToken !== process.env.ADMIN_TOKEN && adminToken !== "Yahya@1122") {
+    return res.status(401).json({ error: "Unauthorized access to admin personas." });
+  }
+
+  try {
+    const { name, avatar_emoji, subject_tag, system_prompt, is_active } = req.body || {};
+    if (!name || !system_prompt) {
+      return res.status(400).json({ error: "name and system_prompt are required." });
+    }
+
+    const isActiveVal = is_active !== false;
+
+    if (dbPool) {
+      const result = await dbPool.query(
+        "INSERT INTO personas (name, avatar_emoji, subject_tag, system_prompt, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        [name, avatar_emoji || "👤", subject_tag || "General", system_prompt, isActiveVal]
+      );
+      return res.json(result.rows[0]);
+    } else {
+      const created = {
+        id: "p-" + Math.random().toString(36).substring(7),
+        name,
+        avatar_emoji: avatar_emoji || "👤",
+        subject_tag: subject_tag || "General",
+        system_prompt,
+        is_active: isActiveVal,
+        created_at: new Date()
+      };
+      inMemoryPersonas.push(created);
+      return res.json(created);
+    }
+  } catch (error: any) {
+    console.error("Admin POST personas error:", error);
+    return res.status(500).json({ error: "Failed to create persona." });
+  }
+});
+
+// PATCH /api/admin/personas/:id - Requires X-Admin-Token header
+app.patch("/api/admin/personas/:id", async (req: Request, res: Response) => {
+  const adminToken = req.headers["x-admin-token"];
+  if (adminToken !== process.env.ADMIN_TOKEN && adminToken !== "Yahya@1122") {
+    return res.status(401).json({ error: "Unauthorized access to admin personas." });
+  }
+
+  const { id } = req.params;
+
+  try {
+    const { name, avatar_emoji, subject_tag, system_prompt, is_active } = req.body || {};
+
+    if (dbPool) {
+      try {
+        const updates: string[] = [];
+        const values: any[] = [];
+        let idx = 1;
+
+        if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name); }
+        if (avatar_emoji !== undefined) { updates.push(`avatar_emoji = $${idx++}`); values.push(avatar_emoji); }
+        if (subject_tag !== undefined) { updates.push(`subject_tag = $${idx++}`); values.push(subject_tag); }
+        if (system_prompt !== undefined) { updates.push(`system_prompt = $${idx++}`); values.push(system_prompt); }
+        if (is_active !== undefined) { updates.push(`is_active = $${idx++}`); values.push(is_active); }
+
+        if (updates.length === 0) {
+          return res.status(400).json({ error: "No fields to update provided." });
+        }
+
+        values.push(id);
+        const result = await dbPool.query(
+          `UPDATE personas SET ${updates.join(", ")} WHERE id = $${idx} RETURNING *`,
+          values
+        );
+
+        if (result.rows.length === 0) {
+          return res.status(404).json({ error: "Persona not found." });
+        }
+        return res.json(result.rows[0]);
+      } catch (e: any) {
+        console.warn("DB UUID Update exception:", e);
+        return res.status(404).json({ error: "Persona UUID mismatch or DB failure." });
+      }
+    } else {
+      const pIdx = inMemoryPersonas.findIndex(p => p.id === id);
+      if (pIdx === -1) {
+        return res.status(404).json({ error: "Persona not found." });
+      }
+      const existing = inMemoryPersonas[pIdx];
+      const updated = {
+        ...existing,
+        ...(name !== undefined && { name }),
+        ...(avatar_emoji !== undefined && { avatar_emoji }),
+        ...(subject_tag !== undefined && { subject_tag }),
+        ...(system_prompt !== undefined && { system_prompt }),
+        ...(is_active !== undefined && { is_active })
+      };
+      inMemoryPersonas[pIdx] = updated;
+      return res.json(updated);
+    }
+  } catch (error: any) {
+    console.error("Admin PATCH personas error:", error);
+    return res.status(500).json({ error: "Failed to update persona." });
+  }
+});
+
+// ==========================================
+// STUDENT NOTES MANAGEMENT API ROUTES
+// ==========================================
+
+// GET /api/notes — returns all notes for authenticated user ordered by updated_at DESC
+app.get("/api/notes", async (req: Request, res: Response) => {
+  const user = getCurrentUser(req);
+  if (!user) {
+    return res.status(401).json({ error: "Sign in required to view notes." });
+  }
+
+  try {
+    if (dbPool) {
+      const result = await dbPool.query(
+        "SELECT id, user_id, title, content, subject_tag, tags, created_at, updated_at FROM notes WHERE user_id = $1 ORDER BY updated_at DESC",
+        [user.id]
+      );
+      return res.json(result.rows);
+    } else {
+      const userNotes = inMemoryNotes
+        .filter((n) => n.user_id === user.id)
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+      return res.json(userNotes);
+    }
+  } catch (error: any) {
+    console.error("Error in GET /api/notes:", error);
+    return res.status(500).json({ error: "Failed to retrieve notes." });
+  }
+});
+
+// POST /api/notes — creates a new note for authenticated user
+app.post("/api/notes", async (req: Request, res: Response) => {
+  const user = getCurrentUser(req);
+  if (!user) {
+    return res.status(401).json({ error: "Sign in required to create notes." });
+  }
+
+  try {
+    const { title, content, subject_tag, tags } = req.body || {};
+    if (!title || !content) {
+      return res.status(400).json({ error: "Title and content are required." });
+    }
+
+    const noteTags = Array.isArray(tags) ? tags : [];
+
+    if (dbPool) {
+      const result = await dbPool.query(
+        "INSERT INTO notes (user_id, title, content, subject_tag, tags) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        [user.id, title, content, subject_tag || "General", noteTags]
+      );
+      return res.status(201).json(result.rows[0]);
+    } else {
+      const newNote = {
+        id: "note-" + Math.random().toString(36).substring(7),
+        user_id: user.id,
+        title,
+        content,
+        subject_tag: subject_tag || "General",
+        tags: noteTags,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      inMemoryNotes.push(newNote);
+      return res.status(201).json(newNote);
+    }
+  } catch (error: any) {
+    console.error("Error in POST /api/notes:", error);
+    return res.status(500).json({ error: "Failed to create note." });
+  }
+});
+
+// PATCH /api/notes/:id — updates an existing note for authenticated user
+app.patch("/api/notes/:id", async (req: Request, res: Response) => {
+  const user = getCurrentUser(req);
+  if (!user) {
+    return res.status(401).json({ error: "Sign in required to update notes." });
+  }
+
+  const { id } = req.params;
+
+  try {
+    const { title, content, subject_tag, tags } = req.body || {};
+
+    if (dbPool) {
+      try {
+        const checkRes = await dbPool.query("SELECT user_id FROM notes WHERE id = $1", [id]);
+        if (checkRes.rows.length === 0) {
+          return res.status(404).json({ error: "Note not found." });
+        }
+        if (checkRes.rows[0].user_id !== user.id) {
+          return res.status(403).json({ error: "Access denied. This note does not belong to you." });
+        }
+
+        const updates: string[] = [];
+        const values: any[] = [];
+        let idx = 1;
+
+        if (title !== undefined) { updates.push(`title = $${idx++}`); values.push(title); }
+        if (content !== undefined) { updates.push(`content = $${idx++}`); values.push(content); }
+        if (subject_tag !== undefined) { updates.push(`subject_tag = $${idx++}`); values.push(subject_tag); }
+        if (tags !== undefined) { updates.push(`tags = $${idx++}`); values.push(Array.isArray(tags) ? tags : []); }
+
+        if (updates.length === 0) {
+          return res.status(400).json({ error: "No fields to update provided." });
+        }
+
+        values.push(id, user.id);
+        const result = await dbPool.query(
+          `UPDATE notes SET ${updates.join(", ")}, updated_at = NOW() WHERE id = $${idx++} AND user_id = $${idx} RETURNING *`,
+          values
+        );
+        if (result.rows.length === 0) {
+          return res.status(404).json({ error: "Note not found." });
+        }
+        return res.json(result.rows[0]);
+      } catch (err) {
+        console.warn("UUID match failure or DB error in PATCH /api/notes:", err);
+        return res.status(404).json({ error: "Note not found or invalid ID." });
+      }
+    } else {
+      const noteIdx = inMemoryNotes.findIndex((n) => n.id === id && n.user_id === user.id);
+      if (noteIdx === -1) {
+        return res.status(404).json({ error: "Note not found." });
+      }
+
+      const existing = inMemoryNotes[noteIdx];
+      const updated = {
+        ...existing,
+        ...(title !== undefined && { title }),
+        ...(content !== undefined && { content }),
+        ...(subject_tag !== undefined && { subject_tag }),
+        ...(tags !== undefined && { tags: Array.isArray(tags) ? tags : [] }),
+        updated_at: new Date().toISOString()
+      };
+      inMemoryNotes[noteIdx] = updated;
+      return res.json(updated);
+    }
+  } catch (error: any) {
+    console.error("Error in PATCH /api/notes:", error);
+    return res.status(500).json({ error: "Failed to update note." });
+  }
+});
+
+// DELETE /api/notes/:id — deletes an existing note for authenticated user
+app.delete("/api/notes/:id", authenticateToken, async (req: any, res: Response) => {
+  try {
+    const checkResult = await pool.query(
+      'SELECT id, user_id FROM notes WHERE id = $1',
+      [req.params.id]
+    );
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Note not found' });
+    }
+    if (checkResult.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    await pool.query('DELETE FROM notes WHERE id = $1', [req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Error in DELETE /api/notes:", err);
+    return res.status(500).json({ error: "Failed to delete note." });
+  }
+});
+
+// POST /api/notes/compile — compiles student notes using Gemini AI
+app.post("/api/notes/compile", async (req: Request, res: Response) => {
+  const user = getCurrentUser(req);
+  if (!user) {
+    return res.status(401).json({ error: "Sign in required to compile notes." });
+  }
+
+  try {
+    const { noteIds } = req.body || {};
+    if (!Array.isArray(noteIds) || noteIds.length < 2) {
+      return res.status(400).json({ error: "At least 2 noteIds must be provided in an array to compile." });
+    }
+
+    let notes: any[] = [];
+
+    if (dbPool) {
+      try {
+        const result = await dbPool.query(
+          "SELECT id, title, content, subject_tag FROM notes WHERE user_id = $1 AND id = ANY($2::uuid[])",
+          [user.id, noteIds]
+        );
+        notes = result.rows;
+      } catch (err) {
+        console.warn("Invalid UUID array format passed to compile notes:", err);
+        return res.status(400).json({ error: "Invalid note identifier formats provided." });
+      }
+    } else {
+      notes = inMemoryNotes.filter((n) => n.user_id === user.id && noteIds.includes(n.id));
+    }
+
+    if (notes.length === 0) {
+      return res.status(404).json({ error: "No matching notes found belonging to you." });
+    }
+
+    if (notes.length !== noteIds.length) {
+      return res.status(403).json({ error: "One or more notes do not exist or do not belong to you." });
+    }
+
+    // Combine notes title and content
+    const combinedNotesText = notes
+      .map((n) => `--- NOTE TITLE: ${n.title} [Subject: ${n.subject_tag || "General"}] ---\n${n.content}`)
+      .join("\n\n");
+
+    const prompt = `Compile these student notes into a single, well-structured study document.
+Use clear headings for each topic, organize related content together,
+remove repetition, and add a brief summary at the end.
+
+Notes to compile:
+${combinedNotesText}
+
+Return only the compiled document text, no extra commentary.`;
+
+    const result = await callGeminiWithFallback({
+      contents: [{ role: "user", parts: [{ text: prompt }] }]
+    });
+
+    return res.json({ compiled: result.text.trim() });
+  } catch (error: any) {
+    console.error("Compile notes error:", error);
+    return res.status(500).json({ error: error.message || "Failed to compile notes." });
+  }
 });
 
 // Tab Usage Verification & Increment Helper

@@ -14,6 +14,7 @@ import {
   Lock,
   Activity,
   Clock,
+  Compass,
 } from "lucide-react";
 import { CategoryInfo, CategoryType, TabUsage } from "../types";
 import { useUser } from "../context/UserContext";
@@ -31,7 +32,14 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: "related", label: "Related Topics", shortLabel: "Graph", iconName: "Network", description: "Knowledge graph & connected node network" },
   { id: "recommendations", label: "Recommendations", shortLabel: "Recs", iconName: "Sparkles", description: "Smart AI recommendations & curated topics" },
   { id: "history", label: "History", shortLabel: "History", iconName: "History", description: "Your persistent search history, pins & stars" },
+  // Learning Mode Custom/Placeholder Tabs
+  { id: "qa", label: "Learning Q&A", shortLabel: "Q&A", iconName: "MessageSquare", description: "Punjab/Federal Board syllabus learning chatbot" },
+  { id: "counseling", label: "Counseling", shortLabel: "Counsel", iconName: "Compass", description: "Syllabus, subject selection & study advisor" },
+  { id: "notes", label: "Notes", shortLabel: "Notes", iconName: "FileText", description: "Notes taking and summary generator" },
 ];
+
+const RESEARCH_TABS = ["overview", "research", "software", "news", "communities", "related"];
+const LEARNING_TABS = ["overview", "education", "videos", "qa", "counseling"];
 
 interface CategoryTabsProps {
   activeCategory: CategoryType;
@@ -48,7 +56,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
   currentTopic,
   dataTrigger,
 }) => {
-  const { isLoggedIn } = useUser();
+  const { isLoggedIn, mode } = useUser();
   const [usageInfo, setUsageInfo] = useState<TabUsage | null>(null);
 
   const isGatedTab = activeCategory === "research" || activeCategory === "software";
@@ -88,15 +96,19 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
       case "Network": return <Network className="w-4 h-4" />;
       case "Sparkles": return <Sparkles className="w-4 h-4" />;
       case "History": return <History className="w-4 h-4 text-amber-500" />;
+      case "Compass": return <Compass className="w-4 h-4" />;
       default: return <BookOpen className="w-4 h-4" />;
     }
   };
+
+  const allowedTabs = mode === "research" ? RESEARCH_TABS : LEARNING_TABS;
+  const filteredCategories = CATEGORIES.filter((cat) => allowedTabs.includes(cat.id));
 
   return (
     <div className="w-full border-b border-slate-200/60 dark:border-slate-800/60 bg-white/95 dark:bg-slate-950/95 sticky top-14 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-2">
-          {CATEGORIES.map((cat) => {
+          {filteredCategories.map((cat) => {
             const isActive = activeCategory === cat.id;
             const isLoaded = loadedCategories.has(cat.id);
             const isProtected = (cat.id === "research" || cat.id === "software") && !isLoggedIn;

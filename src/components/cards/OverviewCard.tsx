@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { OverviewData } from "../../types";
-import { ExternalLink, Calendar, Users, Cpu, ChevronDown, ChevronUp, Sparkles, Network } from "lucide-react";
+import { ExternalLink, Calendar, Users, Cpu, ChevronDown, ChevronUp, Sparkles, Network, Plus, Check } from "lucide-react";
+import { MarkdownRenderer } from "../MarkdownRenderer";
+import { useNotes } from "../../hooks/useNotes";
 
 interface OverviewCardProps {
   data: OverviewData;
@@ -18,21 +20,56 @@ export const OverviewCard: React.FC<OverviewCardProps> = ({
   synonymsConnected = [],
 }) => {
   const [showDetails, setShowDetails] = useState(false);
+  const { addNote } = useNotes();
+  const [addedMap, setAddedMap] = useState<Record<string, boolean>>({});
 
   const popularityScore = entity?.popularityScore ?? 94;
   const authorityScore = entity?.authorityScore ?? 98;
   const freshnessScore = entity?.freshnessScore ?? 91;
   const aliases = entity?.aliases || synonymsConnected || ["gravitation", "Newtonian Physics", "General Relativity"];
 
+  const triggerToast = (msg: string) => {
+    const toast = document.createElement("div");
+    toast.className = "fixed bottom-24 right-6 z-50 bg-slate-900 text-white text-xs px-3.5 py-2.5 rounded-xl border border-slate-700 shadow-xl flex items-center gap-1.5 font-medium";
+    toast.innerHTML = `<span>✓</span> <span>${msg}</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.5s ease";
+      setTimeout(() => toast.remove(), 500);
+    }, 2000);
+  };
+
+  const handleAddNote = async (key: string, title: string, content: string) => {
+    try {
+      await addNote(title, content, data.topic || "Overview");
+      setAddedMap((prev) => ({ ...prev, [key]: true }));
+      triggerToast("Added to Notes ✓");
+      setTimeout(() => setAddedMap((prev) => ({ ...prev, [key]: false })), 3000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
     <div className="space-y-10 animate-in fade-in duration-300">
       {/* Primary Summary Block - Clean & Uncluttered */}
       <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Summary
+          </h3>
+          <button
+            onClick={() => handleAddNote("summary", `Summary: ${data.topic || "Topic"}`, data.summary)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+          >
+            {addedMap["summary"] ? <Check className="w-3 h-3 text-emerald-500" /> : <Plus className="w-3 h-3" />}
+            <span>{addedMap["summary"] ? "Added" : "+ Notes"}</span>
+          </button>
+        </div>
         <div className="flex flex-col lg:flex-row gap-6 items-start justify-between">
           <div className="flex-1 space-y-3">
-            <p className="text-slate-800 dark:text-slate-100 text-lg sm:text-xl leading-relaxed font-normal">
-              {data.summary}
-            </p>
+            <MarkdownRenderer content={data.summary} className="text-lg sm:text-xl text-slate-800 dark:text-slate-100" />
 
             {data.wikiUrl && (
               <a
@@ -142,9 +179,21 @@ export const OverviewCard: React.FC<OverviewCardProps> = ({
       {/* Core Concepts - Spacious & Clean */}
       {data.coreConcepts && data.coreConcepts.length > 0 && (
         <div className="space-y-4 pt-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            Core Principles
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Core Principles
+            </h3>
+            <button
+              onClick={() => {
+                const content = data.coreConcepts.map(c => `### ${c.title}\n${c.description}\nTags: ${c.tags.join(', ')}`).join('\n\n');
+                handleAddNote("concepts", `Core Principles: ${data.topic || "Topic"}`, content);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+            >
+              {addedMap["concepts"] ? <Check className="w-3 h-3 text-emerald-500" /> : <Plus className="w-3 h-3" />}
+              <span>{addedMap["concepts"] ? "Added" : "+ Notes"}</span>
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {data.coreConcepts.map((concept, idx) => (
               <div
@@ -176,9 +225,21 @@ export const OverviewCard: React.FC<OverviewCardProps> = ({
       {/* Timeline Section - Elegant Minimalist Vertical Line */}
       {data.timeline && data.timeline.length > 0 && (
         <div className="space-y-4 pt-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            Evolution & History
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Evolution & History
+            </h3>
+            <button
+              onClick={() => {
+                const content = data.timeline.map(t => `* **${t.year}**: ${t.title} - ${t.description}`).join('\n');
+                handleAddNote("timeline", `Timeline: ${data.topic || "Topic"}`, content);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+            >
+              {addedMap["timeline"] ? <Check className="w-3 h-3 text-emerald-500" /> : <Plus className="w-3 h-3" />}
+              <span>{addedMap["timeline"] ? "Added" : "+ Notes"}</span>
+            </button>
+          </div>
           <div className="relative border-l border-slate-200 dark:border-slate-800 ml-3 pl-5 space-y-6">
             {data.timeline.map((item, idx) => (
               <div key={idx} className="relative">
