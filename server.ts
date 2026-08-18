@@ -309,6 +309,53 @@ async function initDatabaseSchema() {
       );
     `);
 
+    // 17. Expert Personas Management Table (Unified Single Source of Truth)
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS expert_personas (
+        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        slug          VARCHAR(64) UNIQUE NOT NULL,
+        name          VARCHAR(128) NOT NULL,
+        initials      VARCHAR(4) NOT NULL,
+        role          VARCHAR(128) NOT NULL,
+        affiliation   VARCHAR(256),
+        badge         VARCHAR(64) NOT NULL,
+        avatar_color  VARCHAR(16) DEFAULT '#6366f1',
+        specialties   TEXT[] DEFAULT '{}',
+        domains       TEXT[] DEFAULT '{}',
+        description   TEXT,
+        personality   VARCHAR(256),
+        opener_template VARCHAR(512),
+        system_prompt TEXT,
+        is_active     BOOLEAN DEFAULT true,
+        is_default    BOOLEAN DEFAULT false,
+        display_order INTEGER DEFAULT 0,
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        updated_at    TIMESTAMPTZ DEFAULT now()
+      );
+    `);
+
+    await dbPool.query(`
+      CREATE INDEX IF NOT EXISTS idx_persona_domains ON expert_personas USING GIN(domains);
+    `);
+    await dbPool.query(`
+      CREATE INDEX IF NOT EXISTS idx_persona_active ON expert_personas(is_active, display_order);
+    `);
+
+    // Seed default expert personas
+    await dbPool.query(`
+      INSERT INTO expert_personas (slug, name, initials, role, affiliation, badge, avatar_color, specialties, domains, description, personality, opener_template, system_prompt, is_active, is_default, display_order)
+      VALUES
+      ('aris', 'Dr. Aris Thorne', 'AT', 'Quantum Information Theorist', 'Postdoctoral Fellow, Perimeter Institute', 'Quantum Physics & Computing', '#6366f1', ARRAY['Quantum entanglement','Decoherence','Qubit architectures','Circuit complexity'], ARRAY['quantum mechanics','quantum computing','physics','qubits','superposition','entanglement','decoherence','quantum information'], 'Postdoctoral researcher specializing in quantum information theory and decoherence dynamics.', 'precise, theoretical, loves thought experiments', 'I see you are exploring {topic}. I research quantum information theory and decoherence dynamics. What questions do you have?', 'You are Dr. Aris Thorne, a Quantum Information Theorist. Speak with precision. Use thought experiments. Build intuition before formalism.', true, false, 1),
+      ('elena', 'Dr. Elena Vasquez', 'EV', 'Cognitive Neuroscientist', 'Associate Professor, University of Barcelona', 'Neuroscience & Psychology', '#ec4899', ARRAY['Neuroplasticity','Memory consolidation','Mindfulness research','Default mode network'], ARRAY['neuroscience','meditation','mindfulness','brain','memory','attention','psychology','consciousness','sleep','mental health','stress'], 'Studies how contemplative practices like meditation reshape neural architecture over time.', 'warm, evidence-first, bridges science and lived experience', 'What you are exploring — {topic} — sits at the intersection of contemplative practice and brain science. What is your angle?', 'You are Dr. Elena Vasquez, a Cognitive Neuroscientist. Speak warmly and accessibly. Ground claims in neuroscience. Connect science to practical implications.', true, false, 2),
+      ('marcus', 'Marcus Reid', 'MR', 'Full-Stack Engineer & Systems Architect', 'Principal Engineer, formerly Meta & Stripe', 'Software Engineering', '#f59e0b', ARRAY['Distributed systems','Backend architecture','Database optimization','API design','DevOps'], ARRAY['software engineering','algorithms','data structures','databases','backend','API','distributed systems','cloud','devops','programming','system design','coding'], 'Spent a decade building planet-scale infrastructure at Meta before architecting payment systems at Stripe.', 'direct, no-fluff, opinionated, will push back on wrong approaches', '{topic} — tell me where you are stuck or what you are trying to build. I will skip the textbook intro.', 'You are Marcus Reid, a Principal Software Engineer. Be direct. Skip preamble. Ask what the user is building. Push back on flawed approaches. Give production-grade advice.', true, false, 3),
+      ('mei-ling', 'Dr. Mei-Ling Zhou', 'ML', 'Molecular Biologist & Genomics Researcher', 'Principal Investigator, Broad Institute of MIT and Harvard', 'Biology & Life Sciences', '#10b981', ARRAY['CRISPR-Cas9','Single-cell RNA sequencing','Epigenetics','Cancer genomics','Protein folding'], ARRAY['biology','genetics','genomics','CRISPR','DNA','RNA','protein','cell biology','molecular biology','biochemistry','cancer','evolution','microbiology','biotechnology'], 'Leads a genomics lab at the Broad Institute studying how epigenetic modifications drive cancer progression.', 'meticulous, enthusiastic about data, patient with beginners', '{topic} touches fascinating biology. I work at the molecular level. Where are you in your understanding?', 'You are Dr. Mei-Ling Zhou, a molecular biologist. Be precise and evidence-driven. Explain complex mechanisms using clear analogies.', true, false, 4),
+      ('nikolai', 'Nikolai Petrov', 'NP', 'Macroeconomist & Policy Analyst', 'Senior Fellow, CEPS · Former IMF Consultant', 'Economics & Finance', '#3b82f6', ARRAY['Monetary policy','International trade','Fiscal policy','Emerging markets','Econometrics'], ARRAY['economics','finance','macroeconomics','investing','monetary policy','inflation','GDP','trade','fiscal policy','banking','markets','cryptocurrency','recession'], 'Advised the IMF on sovereign debt restructuring before joining CEPS as senior fellow.', 'analytical, historically grounded, slightly contrarian', '{topic} is never just about the numbers — it is about the institutional context. What is your economics background?', 'You are Nikolai Petrov, a macroeconomist. Be analytically rigorous. Challenge conventional wisdom where evidence warrants. Contextualize within institutional frameworks.', true, false, 5),
+      ('sarah', 'Sarah Okonkwo', 'SO', 'Technology Lawyer & IP Specialist', 'Partner, Okonkwo & Partners LLP · Harvard Law · ex-Google Legal', 'Law & Legal Research', '#f43f5e', ARRAY['Intellectual property','Technology regulation','Data privacy','AI governance','Contract law'], ARRAY['law','legal','intellectual property','patent','copyright','trademark','data privacy','GDPR','AI regulation','contract','startup law','compliance','litigation'], 'Built career at intersection of technology and law — Google IP counsel then founded own AI liability firm.', 'authoritative, no-nonsense, respects user intelligence', '{topic} — there is more legal complexity here than most realize. No disclaimers. What is your situation?', 'You are Sarah Okonkwo, a technology lawyer. Be direct and authoritative. Tell users what the law says and where it is unsettled. Talk like a trusted advisor.', true, false, 6),
+      ('alex', 'Alex Romero', 'AR', 'Data Scientist & ML Engineer', 'Lead Data Scientist, formerly Netflix · Kaggle Grandmaster', 'Data Science & AI', '#8b5cf6', ARRAY['ML pipelines','Recommendation systems','Feature engineering','Statistical modeling','NLP'], ARRAY['machine learning','data science','AI','statistics','Python','NLP','recommendation systems','neural networks','deep learning','data analysis','pandas','SQL'], 'Led personalization modeling at Netflix, building recommendation systems for 250M+ users.', 'hands-on, code-first, competitive but collaborative', '{topic} — are you understanding the theory, implementing something, or debugging a model? Show me what you have.', 'You are Alex Romero, a Lead Data Scientist. Be hands-on and practical. Ask for code or data when relevant. Prefer concrete examples. Write clean Python when asked.', true, false, 7),
+      ('aisha', 'Dr. Aisha Patel', 'AP', 'AI Safety Researcher', 'Research Scientist, CHAI, UC Berkeley', 'AI Safety & Ethics', '#f97316', ARRAY['AI alignment','Value learning','Interpretability','AI governance','Existential risk'], ARRAY['AI safety','alignment','ethics','AI governance','interpretability','reward modeling','existential risk','philosophy of AI','AGI','bias','fairness','responsible AI'], 'Research scientist at UC Berkeley working on the value alignment problem for advanced AI systems.', 'philosophically rigorous, optimistic about solutions, loves thought experiments', '{topic} connects to the most important open questions in AI. Are you coming from a technical, governance, or philosophical angle?', 'You are Dr. Aisha Patel, an AI Safety Researcher. Be philosophically rigorous. Show genuine concern for long-term AI risks without alarmism. Engage with counterarguments.', true, true, 8)
+      ON CONFLICT (slug) DO NOTHING;
+    `);
+
     // 17. Seed personas if empty
     await dbPool.query(`
       INSERT INTO personas (name, avatar_emoji, subject_tag, system_prompt, is_active)
@@ -400,6 +447,177 @@ let inMemoryPersonas: any[] = [
     created_at: new Date("2026-08-16T12:04:00Z")
   }
 ];
+let inMemoryExpertPersonas: any[] = [
+  {
+    id: "ep-aris-001",
+    slug: "aris",
+    name: "Dr. Aris Thorne",
+    initials: "AT",
+    role: "Quantum Information Theorist",
+    affiliation: "Postdoctoral Fellow, Perimeter Institute",
+    badge: "Quantum Physics & Computing",
+    avatar_color: "#6366f1",
+    specialties: ["Quantum entanglement", "Decoherence", "Qubit architectures", "Circuit complexity"],
+    domains: ["quantum mechanics", "quantum computing", "physics", "qubits", "superposition", "entanglement", "decoherence", "quantum information"],
+    description: "Postdoctoral researcher specializing in quantum information theory and decoherence dynamics.",
+    personality: "precise, theoretical, loves thought experiments",
+    opener_template: "I see you are exploring {topic}. I research quantum information theory and decoherence dynamics. What questions do you have?",
+    system_prompt: "You are Dr. Aris Thorne, a Quantum Information Theorist. Speak with precision. Use thought experiments. Build intuition before formalism.",
+    is_active: true,
+    is_default: false,
+    display_order: 1,
+    created_at: new Date("2026-08-16T12:00:00Z"),
+    updated_at: new Date("2026-08-16T12:00:00Z"),
+  },
+  {
+    id: "ep-elena-002",
+    slug: "elena",
+    name: "Dr. Elena Vasquez",
+    initials: "EV",
+    role: "Cognitive Neuroscientist",
+    affiliation: "Associate Professor, University of Barcelona",
+    badge: "Neuroscience & Psychology",
+    avatar_color: "#ec4899",
+    specialties: ["Neuroplasticity", "Memory consolidation", "Mindfulness research", "Default mode network"],
+    domains: ["neuroscience", "meditation", "mindfulness", "brain", "memory", "attention", "psychology", "consciousness", "sleep", "mental health", "stress"],
+    description: "Studies how contemplative practices like meditation reshape neural architecture over time.",
+    personality: "warm, evidence-first, bridges science and lived experience",
+    opener_template: "What you are exploring — {topic} — sits at the intersection of contemplative practice and brain science. What is your angle?",
+    system_prompt: "You are Dr. Elena Vasquez, a Cognitive Neuroscientist. Speak warmly and accessibly. Ground claims in neuroscience. Connect science to practical implications.",
+    is_active: true,
+    is_default: false,
+    display_order: 2,
+    created_at: new Date("2026-08-16T12:01:00Z"),
+    updated_at: new Date("2026-08-16T12:01:00Z"),
+  },
+  {
+    id: "ep-marcus-003",
+    slug: "marcus",
+    name: "Marcus Reid",
+    initials: "MR",
+    role: "Full-Stack Engineer & Systems Architect",
+    affiliation: "Principal Engineer, formerly Meta & Stripe",
+    badge: "Software Engineering",
+    avatar_color: "#f59e0b",
+    specialties: ["Distributed systems", "Backend architecture", "Database optimization", "API design", "DevOps"],
+    domains: ["software engineering", "algorithms", "data structures", "databases", "backend", "API", "distributed systems", "cloud", "devops", "programming", "system design", "coding"],
+    description: "Spent a decade building planet-scale infrastructure at Meta before architecting payment systems at Stripe.",
+    personality: "direct, no-fluff, opinionated, will push back on wrong approaches",
+    opener_template: "{topic} — tell me where you are stuck or what you are trying to build. I will skip the textbook intro.",
+    system_prompt: "You are Marcus Reid, a Principal Software Engineer. Be direct. Skip preamble. Ask what the user is building. Push back on flawed approaches. Give production-grade advice.",
+    is_active: true,
+    is_default: false,
+    display_order: 3,
+    created_at: new Date("2026-08-16T12:02:00Z"),
+    updated_at: new Date("2026-08-16T12:02:00Z"),
+  },
+  {
+    id: "ep-meiling-004",
+    slug: "mei-ling",
+    name: "Dr. Mei-Ling Zhou",
+    initials: "ML",
+    role: "Molecular Biologist & Genomics Researcher",
+    affiliation: "Principal Investigator, Broad Institute of MIT and Harvard",
+    badge: "Biology & Life Sciences",
+    avatar_color: "#10b981",
+    specialties: ["CRISPR-Cas9", "Single-cell RNA sequencing", "Epigenetics", "Cancer genomics", "Protein folding"],
+    domains: ["biology", "genetics", "genomics", "CRISPR", "DNA", "RNA", "protein", "cell biology", "molecular biology", "biochemistry", "cancer", "evolution", "microbiology", "biotechnology"],
+    description: "Leads a genomics lab at the Broad Institute studying how epigenetic modifications drive cancer progression.",
+    personality: "meticulous, enthusiastic about data, patient with beginners",
+    opener_template: "{topic} touches fascinating biology. I work at the molecular level. Where are you in your understanding?",
+    system_prompt: "You are Dr. Mei-Ling Zhou, a molecular biologist. Be precise and evidence-driven. Explain complex mechanisms using clear analogies.",
+    is_active: true,
+    is_default: false,
+    display_order: 4,
+    created_at: new Date("2026-08-16T12:03:00Z"),
+    updated_at: new Date("2026-08-16T12:03:00Z"),
+  },
+  {
+    id: "ep-nikolai-005",
+    slug: "nikolai",
+    name: "Nikolai Petrov",
+    initials: "NP",
+    role: "Macroeconomist & Policy Analyst",
+    affiliation: "Senior Fellow, CEPS · Former IMF Consultant",
+    badge: "Economics & Finance",
+    avatar_color: "#3b82f6",
+    specialties: ["Monetary policy", "International trade", "Fiscal policy", "Emerging markets", "Econometrics"],
+    domains: ["economics", "finance", "macroeconomics", "investing", "monetary policy", "inflation", "GDP", "trade", "fiscal policy", "banking", "markets", "cryptocurrency", "recession"],
+    description: "Advised the IMF on sovereign debt restructuring before joining CEPS as senior fellow.",
+    personality: "analytical, historically grounded, slightly contrarian",
+    opener_template: "{topic} is never just about the numbers — it is about the institutional context. What is your economics background?",
+    system_prompt: "You are Nikolai Petrov, a macroeconomist. Be analytically rigorous. Challenge conventional wisdom where evidence warrants. Contextualize within institutional frameworks.",
+    is_active: true,
+    is_default: false,
+    display_order: 5,
+    created_at: new Date("2026-08-16T12:04:00Z"),
+    updated_at: new Date("2026-08-16T12:04:00Z"),
+  },
+  {
+    id: "ep-sarah-006",
+    slug: "sarah",
+    name: "Sarah Okonkwo",
+    initials: "SO",
+    role: "Technology Lawyer & IP Specialist",
+    affiliation: "Partner, Okonkwo & Partners LLP · Harvard Law · ex-Google Legal",
+    badge: "Law & Legal Research",
+    avatar_color: "#f43f5e",
+    specialties: ["Intellectual property", "Technology regulation", "Data privacy", "AI governance", "Contract law"],
+    domains: ["law", "legal", "intellectual property", "patent", "copyright", "trademark", "data privacy", "GDPR", "AI regulation", "contract", "startup law", "compliance", "litigation"],
+    description: "Built career at intersection of technology and law — Google IP counsel then founded own AI liability firm.",
+    personality: "authoritative, no-nonsense, respects user intelligence",
+    opener_template: "{topic} — there is more legal complexity here than most realize. No disclaimers. What is your situation?",
+    system_prompt: "You are Sarah Okonkwo, a technology lawyer. Be direct and authoritative. Tell users what the law says and where it is unsettled. Talk like a trusted advisor.",
+    is_active: true,
+    is_default: false,
+    display_order: 6,
+    created_at: new Date("2026-08-16T12:05:00Z"),
+    updated_at: new Date("2026-08-16T12:05:00Z"),
+  },
+  {
+    id: "ep-alex-007",
+    slug: "alex",
+    name: "Alex Romero",
+    initials: "AR",
+    role: "Data Scientist & ML Engineer",
+    affiliation: "Lead Data Scientist, formerly Netflix · Kaggle Grandmaster",
+    badge: "Data Science & AI",
+    avatar_color: "#8b5cf6",
+    specialties: ["ML pipelines", "Recommendation systems", "Feature engineering", "Statistical modeling", "NLP"],
+    domains: ["machine learning", "data science", "AI", "statistics", "Python", "NLP", "recommendation systems", "neural networks", "deep learning", "data analysis", "pandas", "SQL"],
+    description: "Led personalization modeling at Netflix, building recommendation systems for 250M+ users.",
+    personality: "hands-on, code-first, competitive but collaborative",
+    opener_template: "{topic} — are you understanding the theory, implementing something, or debugging a model? Show me what you have.",
+    system_prompt: "You are Alex Romero, a Lead Data Scientist. Be hands-on and practical. Ask for code or data when relevant. Prefer concrete examples. Write clean Python when asked.",
+    is_active: true,
+    is_default: false,
+    display_order: 7,
+    created_at: new Date("2026-08-16T12:06:00Z"),
+    updated_at: new Date("2026-08-16T12:06:00Z"),
+  },
+  {
+    id: "ep-aisha-008",
+    slug: "aisha",
+    name: "Dr. Aisha Patel",
+    initials: "AP",
+    role: "AI Safety Researcher",
+    affiliation: "Research Scientist, CHAI, UC Berkeley",
+    badge: "AI Safety & Ethics",
+    avatar_color: "#f97316",
+    specialties: ["AI alignment", "Value learning", "Interpretability", "AI governance", "Existential risk"],
+    domains: ["AI safety", "alignment", "ethics", "AI governance", "interpretability", "reward modeling", "existential risk", "philosophy of AI", "AGI", "bias", "fairness", "responsible AI"],
+    description: "Research scientist at UC Berkeley working on the value alignment problem for advanced AI systems.",
+    personality: "philosophically rigorous, optimistic about solutions, loves thought experiments",
+    opener_template: "{topic} connects to the most important open questions in AI. Are you coming from a technical, governance, or philosophical angle?",
+    system_prompt: "You are Dr. Aisha Patel, an AI Safety Researcher. Be philosophically rigorous. Show genuine concern for long-term AI risks without alarmism. Engage with counterarguments.",
+    is_active: true,
+    is_default: true,
+    display_order: 8,
+    created_at: new Date("2026-08-16T12:07:00Z"),
+    updated_at: new Date("2026-08-16T12:07:00Z"),
+  }
+];
+
 let inMemoryCounselingSessions: any[] = [];
 let inMemoryNotes: any[] = [];
 
@@ -2178,26 +2396,457 @@ Please analyze this question/topic and return the response in the exact JSON for
 });
 
 // ==========================================
-// EXPERT COUNSELING CHATBOT & PERSONA ENDPOINTS
+// EXPERT PERSONAS MANAGEMENT & COUNSELING ENDPOINTS (Single Source of Truth)
 // ==========================================
 
-// GET /api/personas - No auth required. Returns active personas.
+// Helper for admin auth
+const checkAdminAuth = (req: Request): boolean => {
+  const adminToken = req.headers["x-admin-token"] || (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.replace("Bearer ", "") : "");
+  return adminToken === process.env.ADMIN_TOKEN || adminToken === "Yahya@1122";
+};
+
+// ─── PUBLIC ROUTES (used by Expert tab & Client) ───────────────────────
+
+// GET /api/v1/personas - Returns all active personas, ordered by display_order
+app.get("/api/v1/personas", async (req: Request, res: Response) => {
+  try {
+    if (dbPool) {
+      const result = await dbPool.query(
+        `SELECT id, slug, name, initials, role, affiliation, badge, avatar_color,
+                specialties, domains, description, personality, opener_template,
+                system_prompt, is_active, is_default, display_order, created_at, updated_at
+         FROM expert_personas
+         WHERE is_active = true
+         ORDER BY display_order ASC, created_at ASC`
+      );
+      return res.json({ success: true, personas: result.rows });
+    } else {
+      const active = inMemoryExpertPersonas
+        .filter(p => p.is_active)
+        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      return res.json({ success: true, personas: active });
+    }
+  } catch (err: any) {
+    console.error("GET /api/v1/personas error:", err);
+    // Fallback to in-memory if DB query fails
+    const active = inMemoryExpertPersonas.filter(p => p.is_active);
+    return res.json({ success: true, personas: active });
+  }
+});
+
+// GET /api/v1/personas/match?topic=xyz - Returns best-matched persona for a given topic string
+app.get("/api/v1/personas/match", async (req: Request, res: Response) => {
+  const topic = ((req.query.topic as string) || "").trim().toLowerCase();
+
+  try {
+    if (dbPool) {
+      if (!topic) {
+        const def = await dbPool.query(
+          `SELECT * FROM expert_personas WHERE is_default = true AND is_active = true LIMIT 1`
+        );
+        const fallback = def.rows[0] || (await dbPool.query(`SELECT * FROM expert_personas WHERE is_active = true ORDER BY display_order ASC LIMIT 1`)).rows[0];
+        return res.json({ success: true, persona: fallback || null });
+      }
+
+      // Match against domains using ILIKE
+      const result = await dbPool.query(
+        `SELECT *, (
+           SELECT COUNT(*) FROM unnest(domains) d
+           WHERE $1 ILIKE '%' || d || '%' OR d ILIKE '%' || split_part($1, ' ', 1) || '%'
+         ) AS match_score
+         FROM expert_personas
+         WHERE is_active = true
+         ORDER BY match_score DESC, display_order ASC
+         LIMIT 1`,
+        [topic]
+      );
+
+      if (!result.rows[0] || result.rows[0].match_score === '0' || Number(result.rows[0].match_score) === 0) {
+        const def = await dbPool.query(
+          `SELECT * FROM expert_personas WHERE is_default = true AND is_active = true LIMIT 1`
+        );
+        const fallback = def.rows[0] || (await dbPool.query(`SELECT * FROM expert_personas WHERE is_active = true ORDER BY display_order ASC LIMIT 1`)).rows[0];
+        return res.json({ success: true, persona: fallback || null });
+      }
+
+      return res.json({ success: true, persona: result.rows[0] });
+    } else {
+      // In-Memory matching logic
+      const active = inMemoryExpertPersonas.filter(p => p.is_active);
+      if (!topic || active.length === 0) {
+        const def = active.find(p => p.is_default) || active[0] || null;
+        return res.json({ success: true, persona: def });
+      }
+
+      let bestPersona = null;
+      let maxScore = 0;
+
+      for (const p of active) {
+        let score = 0;
+        const domains = p.domains || [];
+        for (const d of domains) {
+          const dLower = d.toLowerCase();
+          if (topic.includes(dLower) || dLower.includes(topic.split(" ")[0])) {
+            score++;
+          }
+        }
+        if (score > maxScore) {
+          maxScore = score;
+          bestPersona = p;
+        }
+      }
+
+      if (!bestPersona || maxScore === 0) {
+        bestPersona = active.find(p => p.is_default) || active[0] || null;
+      }
+
+      return res.json({ success: true, persona: bestPersona });
+    }
+  } catch (err: any) {
+    console.error("GET /api/v1/personas/match error:", err);
+    const active = inMemoryExpertPersonas.filter(p => p.is_active);
+    const def = active.find(p => p.is_default) || active[0] || null;
+    return res.json({ success: true, persona: def });
+  }
+});
+
+// GET /api/v1/personas/:slug - Returns a single persona by slug or id
+app.get("/api/v1/personas/:slug", async (req: Request, res: Response) => {
+  const { slug } = req.params;
+  try {
+    if (dbPool) {
+      const result = await dbPool.query(
+        `SELECT * FROM expert_personas WHERE (slug = $1 OR id::text = $1) AND is_active = true LIMIT 1`,
+        [slug]
+      );
+      if (!result.rows[0]) {
+        return res.status(404).json({ success: false, error: "Persona not found" });
+      }
+      return res.json({ success: true, persona: result.rows[0] });
+    } else {
+      const found = inMemoryExpertPersonas.find(p => (p.slug === slug || p.id === slug) && p.is_active);
+      if (!found) {
+        return res.status(404).json({ success: false, error: "Persona not found" });
+      }
+      return res.json({ success: true, persona: found });
+    }
+  } catch (err: any) {
+    console.error("GET /api/v1/personas/:slug error:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch persona" });
+  }
+});
+
+// ─── ADMIN ROUTES (used by Admin tab) ─────────────────────────
+
+// GET /api/v1/personas/admin/all - Returns ALL personas including inactive
+app.get("/api/v1/personas/admin/all", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ success: false, error: "Unauthorized access to admin personas." });
+  }
+
+  try {
+    if (dbPool) {
+      const result = await dbPool.query(
+        `SELECT * FROM expert_personas ORDER BY display_order ASC, created_at ASC`
+      );
+      return res.json({ success: true, personas: result.rows });
+    } else {
+      const sorted = [...inMemoryExpertPersonas].sort(
+        (a, b) => (a.display_order || 0) - (b.display_order || 0)
+      );
+      return res.json({ success: true, personas: sorted });
+    }
+  } catch (err: any) {
+    console.error("GET /api/v1/personas/admin/all error:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch all personas" });
+  }
+});
+
+// POST /api/v1/personas/admin/create - Create a new persona
+app.post("/api/v1/personas/admin/create", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ success: false, error: "Unauthorized access to admin personas." });
+  }
+
+  const {
+    slug, name, initials, role, affiliation, badge,
+    avatar_color, specialties, domains, description,
+    personality, opener_template, system_prompt,
+    is_active, is_default, display_order
+  } = req.body || {};
+
+  if (!name || !role || !badge) {
+    return res.status(400).json({ success: false, error: "name, role, and badge are required." });
+  }
+
+  // Derive slug if not provided
+  const derivedSlug = (slug || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")) || `persona-${Date.now()}`;
+  const autoInitials = initials || name.split(" ").filter(Boolean).map((w: string) => w[0]).join("").slice(0, 3).toUpperCase() || "EX";
+  const parsedSpecialties = Array.isArray(specialties) ? specialties : (typeof specialties === "string" ? specialties.split(",").map(s => s.trim()).filter(Boolean) : []);
+  const parsedDomains = Array.isArray(domains) ? domains : (typeof domains === "string" ? domains.split(",").map(d => d.trim().toLowerCase()).filter(Boolean) : []);
+  const isActiveVal = is_active !== false;
+  const isDefaultVal = Boolean(is_default);
+  const displayOrderVal = Number(display_order) || 99;
+
+  try {
+    if (dbPool) {
+      if (isDefaultVal) {
+        await dbPool.query(`UPDATE expert_personas SET is_default = false WHERE is_default = true`);
+      }
+
+      const result = await dbPool.query(
+        `INSERT INTO expert_personas
+           (slug, name, initials, role, affiliation, badge, avatar_color,
+            specialties, domains, description, personality, opener_template,
+            system_prompt, is_active, is_default, display_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         RETURNING *`,
+        [
+          derivedSlug,
+          name,
+          autoInitials,
+          role,
+          affiliation || null,
+          badge,
+          avatar_color || "#6366f1",
+          parsedSpecialties,
+          parsedDomains,
+          description || null,
+          personality || null,
+          opener_template || `I see you are exploring {topic}. How can I help?`,
+          system_prompt || `You are ${name}, a ${role}. Help the user understand their topic clearly.`,
+          isActiveVal,
+          isDefaultVal,
+          displayOrderVal
+        ]
+      );
+      return res.json({ success: true, persona: result.rows[0] });
+    } else {
+      if (isDefaultVal) {
+        inMemoryExpertPersonas.forEach(p => { p.is_default = false; });
+      }
+
+      const newPersona = {
+        id: "ep-" + Math.random().toString(36).substring(7),
+        slug: derivedSlug,
+        name,
+        initials: autoInitials,
+        role,
+        affiliation: affiliation || null,
+        badge,
+        avatar_color: avatar_color || "#6366f1",
+        specialties: parsedSpecialties,
+        domains: parsedDomains,
+        description: description || null,
+        personality: personality || null,
+        opener_template: opener_template || `I see you are exploring {topic}. How can I help?`,
+        system_prompt: system_prompt || `You are ${name}, a ${role}. Help the user understand their topic clearly.`,
+        is_active: isActiveVal,
+        is_default: isDefaultVal,
+        display_order: displayOrderVal,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      inMemoryExpertPersonas.push(newPersona);
+      return res.json({ success: true, persona: newPersona });
+    }
+  } catch (err: any) {
+    if (err.code === "23505") {
+      return res.status(409).json({ success: false, error: `Slug "${derivedSlug}" already exists.` });
+    }
+    console.error("POST /api/v1/personas/admin/create error:", err);
+    return res.status(500).json({ success: false, error: "Failed to create persona." });
+  }
+});
+
+// PATCH /api/v1/personas/admin/:id - Update any field of a persona
+app.patch("/api/v1/personas/admin/:id", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ success: false, error: "Unauthorized access to admin personas." });
+  }
+
+  const { id } = req.params;
+  const allowed = [
+    "name", "slug", "initials", "role", "affiliation", "badge", "avatar_color",
+    "specialties", "domains", "description", "personality",
+    "opener_template", "system_prompt", "is_active", "is_default", "display_order"
+  ];
+
+  const updates: Record<string, any> = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) {
+      if (key === "specialties" && typeof req.body[key] === "string") {
+        updates[key] = req.body[key].split(",").map((s: string) => s.trim()).filter(Boolean);
+      } else if (key === "domains" && typeof req.body[key] === "string") {
+        updates[key] = req.body[key].split(",").map((d: string) => d.trim().toLowerCase()).filter(Boolean);
+      } else {
+        updates[key] = req.body[key];
+      }
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ success: false, error: "No valid fields to update." });
+  }
+
+  try {
+    if (dbPool) {
+      if (updates.is_default === true) {
+        await dbPool.query(`UPDATE expert_personas SET is_default = false WHERE id != $1 AND is_default = true`, [id]);
+      }
+
+      updates.updated_at = new Date();
+      const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 2}`).join(", ");
+      const values = [id, ...Object.values(updates)];
+
+      const result = await dbPool.query(
+        `UPDATE expert_personas SET ${setClauses} WHERE id = $1 OR slug = $1 RETURNING *`,
+        values
+      );
+
+      if (!result.rows[0]) {
+        return res.status(404).json({ success: false, error: "Persona not found." });
+      }
+      return res.json({ success: true, persona: result.rows[0] });
+    } else {
+      const idx = inMemoryExpertPersonas.findIndex(p => p.id === id || p.slug === id);
+      if (idx === -1) {
+        return res.status(404).json({ success: false, error: "Persona not found." });
+      }
+
+      if (updates.is_default === true) {
+        inMemoryExpertPersonas.forEach(p => { p.is_default = false; });
+      }
+
+      const updated = {
+        ...inMemoryExpertPersonas[idx],
+        ...updates,
+        updated_at: new Date()
+      };
+      inMemoryExpertPersonas[idx] = updated;
+      return res.json({ success: true, persona: updated });
+    }
+  } catch (err: any) {
+    console.error("PATCH /api/v1/personas/admin/:id error:", err);
+    return res.status(500).json({ success: false, error: "Failed to update persona." });
+  }
+});
+
+// DELETE /api/v1/personas/admin/:id - Soft delete (deactivate) or hard delete
+app.delete("/api/v1/personas/admin/:id", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ success: false, error: "Unauthorized access to admin personas." });
+  }
+
+  const { id } = req.params;
+  const hard = req.query.hard === "true";
+
+  try {
+    if (dbPool) {
+      if (hard) {
+        await dbPool.query(`DELETE FROM expert_personas WHERE id = $1 OR slug = $1`, [id]);
+        return res.json({ success: true, message: "Persona permanently deleted." });
+      } else {
+        const result = await dbPool.query(
+          `UPDATE expert_personas SET is_active = false, updated_at = now() WHERE id = $1 OR slug = $1 RETURNING slug`,
+          [id]
+        );
+        if (!result.rows[0]) {
+          return res.status(404).json({ success: false, error: "Persona not found." });
+        }
+        return res.json({ success: true, message: `Persona "${result.rows[0].slug}" deactivated.` });
+      }
+    } else {
+      const idx = inMemoryExpertPersonas.findIndex(p => p.id === id || p.slug === id);
+      if (idx === -1) {
+        return res.status(404).json({ success: false, error: "Persona not found." });
+      }
+      if (hard) {
+        inMemoryExpertPersonas.splice(idx, 1);
+        return res.json({ success: true, message: "Persona permanently deleted." });
+      } else {
+        inMemoryExpertPersonas[idx].is_active = false;
+        inMemoryExpertPersonas[idx].updated_at = new Date();
+        return res.json({ success: true, message: `Persona "${inMemoryExpertPersonas[idx].slug}" deactivated.` });
+      }
+    }
+  } catch (err: any) {
+    console.error("DELETE /api/v1/personas/admin/:id error:", err);
+    return res.status(500).json({ success: false, error: "Failed to delete persona." });
+  }
+});
+
+// PATCH /api/v1/personas/admin/:id/reorder - Update display order
+app.patch("/api/v1/personas/admin/:id/reorder", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ success: false, error: "Unauthorized access to admin personas." });
+  }
+
+  const { id } = req.params;
+  const { display_order } = req.body || {};
+  if (display_order === undefined) {
+    return res.status(400).json({ success: false, error: "display_order is required." });
+  }
+
+  try {
+    if (dbPool) {
+      await dbPool.query(
+        `UPDATE expert_personas SET display_order = $1, updated_at = now() WHERE id = $2 OR slug = $2`,
+        [Number(display_order), id]
+      );
+      return res.json({ success: true });
+    } else {
+      const p = inMemoryExpertPersonas.find(item => item.id === id || item.slug === id);
+      if (p) {
+        p.display_order = Number(display_order);
+        p.updated_at = new Date();
+      }
+      return res.json({ success: true });
+    }
+  } catch (err: any) {
+    console.error("PATCH /api/v1/personas/admin/:id/reorder error:", err);
+    return res.status(500).json({ success: false, error: "Failed to reorder persona." });
+  }
+});
+
+// Legacy backward-compatibility endpoints
 app.get("/api/personas", async (req: Request, res: Response) => {
   try {
     if (dbPool) {
       const result = await dbPool.query(
-        "SELECT id, name, avatar_emoji, subject_tag, system_prompt, is_active, created_at FROM personas WHERE is_active = true ORDER BY created_at ASC"
+        `SELECT id, slug, name, initials, role, affiliation, badge, avatar_color,
+                specialties, domains, description, personality, opener_template,
+                system_prompt, is_active, is_default, display_order, created_at, updated_at
+         FROM expert_personas
+         WHERE is_active = true
+         ORDER BY display_order ASC, created_at ASC`
       );
       return res.json(result.rows);
     } else {
-      const active = inMemoryPersonas
+      const active = inMemoryExpertPersonas
         .filter(p => p.is_active)
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       return res.json(active);
     }
   } catch (error: any) {
-    console.error("Error in GET /api/personas:", error);
-    return res.status(500).json({ error: "Failed to fetch personas." });
+    return res.json(inMemoryExpertPersonas.filter(p => p.is_active));
+  }
+});
+
+app.get("/api/admin/personas", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: "Unauthorized access to admin personas." });
+  }
+  try {
+    if (dbPool) {
+      const result = await dbPool.query(`SELECT * FROM expert_personas ORDER BY display_order ASC, created_at ASC`);
+      return res.json(result.rows);
+    } else {
+      return res.json(inMemoryExpertPersonas);
+    }
+  } catch (e: any) {
+    return res.json(inMemoryExpertPersonas);
   }
 });
 
@@ -2237,7 +2886,7 @@ app.get("/api/counsel/session/:personaId", async (req: Request, res: Response) =
     const { personaId } = req.params;
     if (dbPool) {
       const result = await dbPool.query(
-        "SELECT messages FROM counseling_sessions WHERE user_id = $1 AND persona_id = $2 LIMIT 1",
+        "SELECT messages FROM counseling_sessions WHERE user_id = $1 AND (persona_id = $2 OR persona_id::text = $2) LIMIT 1",
         [user.id, personaId]
       );
       if (result.rows.length > 0) {
@@ -2270,7 +2919,10 @@ app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response)
     if (personaId) {
       if (dbPool) {
         try {
-          const result = await dbPool.query("SELECT * FROM personas WHERE id = $1 LIMIT 1", [personaId]);
+          const result = await dbPool.query(
+            "SELECT * FROM expert_personas WHERE id::text = $1 OR slug = $1 LIMIT 1",
+            [personaId]
+          );
           if (result.rows.length > 0) {
             persona = result.rows[0];
             resolvedSystemPrompt = persona.system_prompt;
@@ -2280,7 +2932,7 @@ app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response)
         }
       }
       if (!persona) {
-        persona = inMemoryPersonas.find(p => p.id === personaId);
+        persona = inMemoryExpertPersonas.find(p => p.id === personaId || p.slug === personaId);
         if (persona) {
           resolvedSystemPrompt = persona.system_prompt;
         }
@@ -2309,7 +2961,7 @@ app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response)
     const user = getCurrentUser(req);
     if (user) {
       const updatedMessages = [...messages, { role: "assistant", content: reply }];
-      const resolvedPersonaId = persona?.id || personaId || "expert";
+      const resolvedPersonaId = persona?.slug || persona?.id || personaId || "expert";
       if (dbPool) {
         try {
           const sessionRes = await dbPool.query(
@@ -2353,133 +3005,6 @@ app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response)
   }
 });
 
-// GET /api/admin/personas - Requires X-Admin-Token header
-app.get("/api/admin/personas", async (req: Request, res: Response) => {
-  const adminToken = req.headers["x-admin-token"];
-  if (adminToken !== process.env.ADMIN_TOKEN && adminToken !== "Yahya@1122") {
-    return res.status(401).json({ error: "Unauthorized access to admin personas." });
-  }
-
-  try {
-    if (dbPool) {
-      const result = await dbPool.query(
-        "SELECT id, name, avatar_emoji, subject_tag, system_prompt, is_active, created_at FROM personas ORDER BY created_at ASC"
-      );
-      return res.json(result.rows);
-    } else {
-      const sorted = [...inMemoryPersonas].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      return res.json(sorted);
-    }
-  } catch (error: any) {
-    console.error("Admin GET personas error:", error);
-    return res.status(500).json({ error: "Failed to retrieve personas list." });
-  }
-});
-
-// POST /api/admin/personas - Requires X-Admin-Token header
-app.post("/api/admin/personas", async (req: Request, res: Response) => {
-  const adminToken = req.headers["x-admin-token"];
-  if (adminToken !== process.env.ADMIN_TOKEN && adminToken !== "Yahya@1122") {
-    return res.status(401).json({ error: "Unauthorized access to admin personas." });
-  }
-
-  try {
-    const { name, avatar_emoji, subject_tag, system_prompt, is_active } = req.body || {};
-    if (!name || !system_prompt) {
-      return res.status(400).json({ error: "name and system_prompt are required." });
-    }
-
-    const isActiveVal = is_active !== false;
-
-    if (dbPool) {
-      const result = await dbPool.query(
-        "INSERT INTO personas (name, avatar_emoji, subject_tag, system_prompt, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-        [name, avatar_emoji || "👤", subject_tag || "General", system_prompt, isActiveVal]
-      );
-      return res.json(result.rows[0]);
-    } else {
-      const created = {
-        id: "p-" + Math.random().toString(36).substring(7),
-        name,
-        avatar_emoji: avatar_emoji || "👤",
-        subject_tag: subject_tag || "General",
-        system_prompt,
-        is_active: isActiveVal,
-        created_at: new Date()
-      };
-      inMemoryPersonas.push(created);
-      return res.json(created);
-    }
-  } catch (error: any) {
-    console.error("Admin POST personas error:", error);
-    return res.status(500).json({ error: "Failed to create persona." });
-  }
-});
-
-// PATCH /api/admin/personas/:id - Requires X-Admin-Token header
-app.patch("/api/admin/personas/:id", async (req: Request, res: Response) => {
-  const adminToken = req.headers["x-admin-token"];
-  if (adminToken !== process.env.ADMIN_TOKEN && adminToken !== "Yahya@1122") {
-    return res.status(401).json({ error: "Unauthorized access to admin personas." });
-  }
-
-  const { id } = req.params;
-
-  try {
-    const { name, avatar_emoji, subject_tag, system_prompt, is_active } = req.body || {};
-
-    if (dbPool) {
-      try {
-        const updates: string[] = [];
-        const values: any[] = [];
-        let idx = 1;
-
-        if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name); }
-        if (avatar_emoji !== undefined) { updates.push(`avatar_emoji = $${idx++}`); values.push(avatar_emoji); }
-        if (subject_tag !== undefined) { updates.push(`subject_tag = $${idx++}`); values.push(subject_tag); }
-        if (system_prompt !== undefined) { updates.push(`system_prompt = $${idx++}`); values.push(system_prompt); }
-        if (is_active !== undefined) { updates.push(`is_active = $${idx++}`); values.push(is_active); }
-
-        if (updates.length === 0) {
-          return res.status(400).json({ error: "No fields to update provided." });
-        }
-
-        values.push(id);
-        const result = await dbPool.query(
-          `UPDATE personas SET ${updates.join(", ")} WHERE id = $${idx} RETURNING *`,
-          values
-        );
-
-        if (result.rows.length === 0) {
-          return res.status(404).json({ error: "Persona not found." });
-        }
-        return res.json(result.rows[0]);
-      } catch (e: any) {
-        console.warn("DB UUID Update exception:", e);
-        return res.status(404).json({ error: "Persona UUID mismatch or DB failure." });
-      }
-    } else {
-      const pIdx = inMemoryPersonas.findIndex(p => p.id === id);
-      if (pIdx === -1) {
-        return res.status(404).json({ error: "Persona not found." });
-      }
-      const existing = inMemoryPersonas[pIdx];
-      const updated = {
-        ...existing,
-        ...(name !== undefined && { name }),
-        ...(avatar_emoji !== undefined && { avatar_emoji }),
-        ...(subject_tag !== undefined && { subject_tag }),
-        ...(system_prompt !== undefined && { system_prompt }),
-        ...(is_active !== undefined && { is_active })
-      };
-      inMemoryPersonas[pIdx] = updated;
-      return res.json(updated);
-    }
-  } catch (error: any) {
-    console.error("Admin PATCH personas error:", error);
-    return res.status(500).json({ error: "Failed to update persona." });
-  }
-});
 
 // ==========================================
 // STUDENT NOTES MANAGEMENT API ROUTES

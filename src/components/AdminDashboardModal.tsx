@@ -20,8 +20,18 @@ import {
   Ban,
   UserCheck,
   Lock,
+  Edit2,
+  Star,
+  Sparkles,
 } from "lucide-react";
-import { AdminStats, Entity } from "../types";
+import { AdminStats, Entity, ExpertPersona } from "../types";
+import {
+  adminFetchAll,
+  adminCreatePersona,
+  adminUpdatePersona,
+  adminDeletePersona,
+  adminTogglePersona,
+} from "../stores/personaStore";
 
 interface AdminDashboardModalProps {
   isOpen: boolean;
@@ -36,16 +46,30 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [apiKeys, setApiKeys] = useState<any[]>([]);
-  const [personas, setPersonas] = useState<any[]>([]);
+  const [personas, setPersonas] = useState<ExpertPersona[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "entities" | "cache" | "apikeys" | "personas">("overview");
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
-  // New Counselor Persona form state
+  // New Expert Persona form state
   const [newPersonaName, setNewPersonaName] = useState("");
-  const [newPersonaEmoji, setNewPersonaEmoji] = useState("👤");
-  const [newPersonaTag, setNewPersonaTag] = useState("General");
+  const [newPersonaSlug, setNewPersonaSlug] = useState("");
+  const [newPersonaInitials, setNewPersonaInitials] = useState("");
+  const [newPersonaRole, setNewPersonaRole] = useState("");
+  const [newPersonaAffiliation, setNewPersonaAffiliation] = useState("");
+  const [newPersonaBadge, setNewPersonaBadge] = useState("");
+  const [newPersonaAvatarColor, setNewPersonaAvatarColor] = useState("#6366f1");
+  const [newPersonaSpecialties, setNewPersonaSpecialties] = useState("");
+  const [newPersonaDomains, setNewPersonaDomains] = useState("");
+  const [newPersonaDescription, setNewPersonaDescription] = useState("");
+  const [newPersonaPersonality, setNewPersonaPersonality] = useState("");
+  const [newPersonaOpener, setNewPersonaOpener] = useState("");
   const [newPersonaPrompt, setNewPersonaPrompt] = useState("");
+  const [newPersonaIsDefault, setNewPersonaIsDefault] = useState(false);
+
+  // Editing Persona state
+  const [editingPersona, setEditingPersona] = useState<ExpertPersona | null>(null);
+  const [personaSearchQuery, setPersonaSearchQuery] = useState("");
 
   // Password Protection State
   const [passwordInput, setPasswordInput] = useState("");
@@ -80,11 +104,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setIsLoading(true);
     try {
       const authHeaders = { "X-Admin-Token": activeAdminToken };
-      const [statsRes, entitiesRes, keysRes, personasRes] = await Promise.all([
+      const [statsRes, entitiesRes, keysRes] = await Promise.all([
         fetch("/api/admin/stats", { headers: authHeaders }),
         fetch("/api/admin/entities", { headers: authHeaders }),
         fetch("/api/admin/apikeys", { headers: authHeaders }),
-        fetch("/api/admin/personas", { headers: authHeaders }),
       ]);
 
       if (statsRes.status === 401) {
@@ -107,9 +130,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         const keysData = await keysRes.json();
         setApiKeys(keysData.keys || []);
       }
-      if (personasRes && personasRes.ok) {
-        const personasData = await personasRes.json();
-        setPersonas(personasData);
+
+      // Fetch personas using unified persona store
+      try {
+        const allPersonas = await adminFetchAll(activeAdminToken);
+        setPersonas(allPersonas);
+      } catch (pErr) {
+        console.warn("Failed to fetch personas via personaStore:", pErr);
+        const fallbackRes = await fetch("/api/admin/personas", { headers: authHeaders });
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          setPersonas(Array.isArray(fallbackData) ? fallbackData : fallbackData.personas || []);
+        }
       }
     } catch (err) {
       console.warn("Error fetching admin stats:", err);
@@ -290,53 +322,106 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const handleTogglePersonaActive = async (id: string, currentActive: boolean) => {
     try {
-      const res = await fetch(`/api/admin/personas/${id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Token": adminToken
-        },
-        body: JSON.stringify({ is_active: !currentActive })
-      });
-      if (res.ok) {
-        setRefreshMessage("Persona status updated successfully!");
-        fetchAdminData();
-        setTimeout(() => setRefreshMessage(null), 3000);
-      }
-    } catch (err) {
+      await adminTogglePersona(id, !currentActive, adminToken);
+      setRefreshMessage("Persona status updated successfully!");
+      fetchAdminData();
+      setTimeout(() => setRefreshMessage(null), 3000);
+    } catch (err: any) {
       console.warn("Failed to toggle persona active state:", err);
+      setRefreshMessage(err?.message || "Failed to update persona status");
+      setTimeout(() => setRefreshMessage(null), 3000);
+    }
+  };
+
+  const handleDeletePersona = async (id: string, hard: boolean = false) => {
+    if (!confirm(`Are you sure you want to ${hard ? "permanently delete" : "deactivate"} this persona?`)) {
+      return;
+    }
+    try {
+      await adminDeletePersona(id, hard, adminToken);
+      setRefreshMessage("Persona deleted successfully.");
+      fetchAdminData();
+      setTimeout(() => setRefreshMessage(null), 3000);
+    } catch (err: any) {
+      console.warn("Failed to delete persona:", err);
+      setRefreshMessage(err?.message || "Failed to delete persona");
+      setTimeout(() => setRefreshMessage(null), 3000);
     }
   };
 
   const handleCreatePersona = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPersonaName.trim() || !newPersonaPrompt.trim()) return;
+    if (!newPersonaName.trim() || !newPersonaRole.trim() || !newPersonaBadge.trim()) {
+      setRefreshMessage("Name, Role, and Badge are required.");
+      setTimeout(() => setRefreshMessage(null), 3000);
+      return;
+    }
+
     try {
-      const res = await fetch("/api/admin/personas", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Token": adminToken
-        },
-        body: JSON.stringify({
+      await adminCreatePersona(
+        {
           name: newPersonaName.trim(),
-          avatar_emoji: newPersonaEmoji.trim() || "👤",
-          subject_tag: newPersonaTag.trim() || "General",
-          system_prompt: newPersonaPrompt.trim(),
-          is_active: true
-        })
-      });
-      if (res.ok) {
-        setRefreshMessage(`Persona "${newPersonaName}" added successfully!`);
-        setNewPersonaName("");
-        setNewPersonaEmoji("👤");
-        setNewPersonaTag("General");
-        setNewPersonaPrompt("");
-        fetchAdminData();
-        setTimeout(() => setRefreshMessage(null), 3000);
-      }
-    } catch (err) {
+          slug: newPersonaSlug.trim() || undefined,
+          initials: newPersonaInitials.trim() || undefined,
+          role: newPersonaRole.trim(),
+          affiliation: newPersonaAffiliation.trim() || undefined,
+          badge: newPersonaBadge.trim(),
+          avatar_color: newPersonaAvatarColor.trim() || "#6366f1",
+          specialties: newPersonaSpecialties
+            ? newPersonaSpecialties.split(",").map(s => s.trim()).filter(Boolean)
+            : [],
+          domains: newPersonaDomains
+            ? newPersonaDomains.split(",").map(d => d.trim().toLowerCase()).filter(Boolean)
+            : [],
+          description: newPersonaDescription.trim() || undefined,
+          personality: newPersonaPersonality.trim() || undefined,
+          opener_template: newPersonaOpener.trim() || undefined,
+          system_prompt: newPersonaPrompt.trim() || undefined,
+          is_active: true,
+          is_default: newPersonaIsDefault,
+          display_order: personas.length + 1,
+        },
+        adminToken
+      );
+
+      setRefreshMessage(`Expert persona "${newPersonaName}" created successfully!`);
+      setNewPersonaName("");
+      setNewPersonaSlug("");
+      setNewPersonaInitials("");
+      setNewPersonaRole("");
+      setNewPersonaAffiliation("");
+      setNewPersonaBadge("");
+      setNewPersonaAvatarColor("#6366f1");
+      setNewPersonaSpecialties("");
+      setNewPersonaDomains("");
+      setNewPersonaDescription("");
+      setNewPersonaPersonality("");
+      setNewPersonaOpener("");
+      setNewPersonaPrompt("");
+      setNewPersonaIsDefault(false);
+      fetchAdminData();
+      setTimeout(() => setRefreshMessage(null), 3000);
+    } catch (err: any) {
       console.warn("Failed to add new persona:", err);
+      setRefreshMessage(err?.message || "Failed to create persona");
+      setTimeout(() => setRefreshMessage(null), 3000);
+    }
+  };
+
+  const handleSaveEditPersona = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPersona) return;
+
+    try {
+      await adminUpdatePersona(editingPersona.id, editingPersona, adminToken);
+      setRefreshMessage(`Persona "${editingPersona.name}" updated successfully!`);
+      setEditingPersona(null);
+      fetchAdminData();
+      setTimeout(() => setRefreshMessage(null), 3000);
+    } catch (err: any) {
+      console.warn("Failed to update persona:", err);
+      setRefreshMessage(err?.message || "Failed to update persona");
+      setTimeout(() => setRefreshMessage(null), 3000);
     }
   };
 
@@ -1074,23 +1159,43 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
           )}
 
-          {/* TAB 5: COUNSELING PERSONAS MANAGEMENT */}
+          {/* TAB 5: COUNSELING PERSONAS MANAGEMENT (Single Source of Truth) */}
           {activeTab === "personas" && (
             <div className="space-y-6">
               
-              {/* Add Persona Form */}
+              {/* Header Stats / Overview */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Personas</div>
+                  <div className="text-xl font-bold text-slate-900 dark:text-white mt-1">{personas.length}</div>
+                </div>
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Active Personas</div>
+                  <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                    {personas.filter(p => p.is_active).length}
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Default Persona</div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white mt-1 truncate">
+                    {personas.find(p => p.is_default)?.name || "None set"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Add / Create Expert Persona Form */}
               <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
                 <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Plus className="w-4 h-4 text-emerald-500" />
-                  Create New Counseling Persona
+                  Create New Expert Persona
                 </h3>
 
                 <form onSubmit={handleCreatePersona} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                   <div>
-                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Name</label>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Name *</label>
                     <input
                       type="text"
-                      placeholder="e.g. Matric Urdu Specialist"
+                      placeholder="e.g. Dr. Aris Thorne"
                       value={newPersonaName}
                       onChange={(e) => setNewPersonaName(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -1099,23 +1204,122 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Emoji (Avatar)</label>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Role / Title *</label>
                     <input
                       type="text"
-                      placeholder="e.g. 📚"
-                      value={newPersonaEmoji}
-                      onChange={(e) => setNewPersonaEmoji(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-center font-mono"
+                      placeholder="e.g. Quantum Information Theorist"
+                      value={newPersonaRole}
+                      onChange={(e) => setNewPersonaRole(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                      required
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Subject Tag</label>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Badge / Domain *</label>
                     <input
                       type="text"
-                      placeholder="e.g. Urdu"
-                      value={newPersonaTag}
-                      onChange={(e) => setNewPersonaTag(e.target.value)}
+                      placeholder="e.g. Quantum Physics & Computing"
+                      value={newPersonaBadge}
+                      onChange={(e) => setNewPersonaBadge(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Initials (optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. AT"
+                      maxLength={4}
+                      value={newPersonaInitials}
+                      onChange={(e) => setNewPersonaInitials(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Slug (optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. aris"
+                      value={newPersonaSlug}
+                      onChange={(e) => setNewPersonaSlug(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Avatar Color</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={newPersonaAvatarColor}
+                        onChange={(e) => setNewPersonaAvatarColor(e.target.value)}
+                        className="w-8 h-8 rounded border border-slate-200 dark:border-slate-700 cursor-pointer p-0"
+                      />
+                      <input
+                        type="text"
+                        value={newPersonaAvatarColor}
+                        onChange={(e) => setNewPersonaAvatarColor(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Affiliation / Background</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Postdoctoral Fellow, Perimeter Institute"
+                      value={newPersonaAffiliation}
+                      onChange={(e) => setNewPersonaAffiliation(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div className="flex items-center pt-5">
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none font-semibold text-slate-700 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={newPersonaIsDefault}
+                        onChange={(e) => setNewPersonaIsDefault(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                      />
+                      <span>Set as Default Persona</span>
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Specialties (comma-separated)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Quantum entanglement, Decoherence, Qubit architectures"
+                      value={newPersonaSpecialties}
+                      onChange={(e) => setNewPersonaSpecialties(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Matching Domains / Keywords (comma-separated)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. quantum mechanics, quantum computing, physics, qubits, superposition"
+                      value={newPersonaDomains}
+                      onChange={(e) => setNewPersonaDomains(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Opener Template ({'{topic}'} & {'{name}'} available)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. I see you are exploring {topic}. I research quantum information theory. What questions do you have?"
+                      value={newPersonaOpener}
+                      onChange={(e) => setNewPersonaOpener(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                     />
                   </div>
@@ -1123,12 +1327,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <div className="md:col-span-3">
                     <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">System Instruction Prompt</label>
                     <textarea
-                      rows={4}
-                      placeholder="Write system instructions guiding personality, subject knowledge, and student engagement..."
+                      rows={3}
+                      placeholder="You are Dr. Aris Thorne, a Quantum Information Theorist. Speak with precision. Use thought experiments..."
                       value={newPersonaPrompt}
                       onChange={(e) => setNewPersonaPrompt(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
-                      required
                     />
                   </div>
 
@@ -1143,47 +1346,90 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </form>
               </div>
 
-              {/* Persona Table */}
-              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-                <h3 className="text-xs font-bold text-slate-900 dark:text-white">
-                  System Counseling Personas ({personas.length})
-                </h3>
+              {/* Persona List & Table */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-500" />
+                    Expert Personas Directory ({personas.length})
+                  </h3>
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search personas..."
+                      value={personaSearchQuery}
+                      onChange={(e) => setPersonaSearchQuery(e.target.value)}
+                      className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs w-56"
+                    />
+                  </div>
+                </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
-                        <th className="py-2.5 px-3">Avatar</th>
-                        <th className="py-2.5 px-3">Name</th>
-                        <th className="py-2.5 px-3">Subject</th>
-                        <th className="py-2.5 px-3 max-w-xs">System Prompt</th>
+                        <th className="py-2.5 px-3">Expert</th>
+                        <th className="py-2.5 px-3">Badge & Domain</th>
+                        <th className="py-2.5 px-3">Specialties</th>
                         <th className="py-2.5 px-3">Status</th>
                         <th className="py-2.5 px-3 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {personas.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-400 italic">
-                            No personas created yet.
-                          </td>
-                        </tr>
-                      ) : (
-                        personas.map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/50">
-                            <td className="py-3 px-3 text-xl select-none">
-                              {p.avatar_emoji || "👤"}
-                            </td>
-                            <td className="py-3 px-3 font-semibold text-slate-900 dark:text-white">
-                              {p.name}
+                      {personas
+                        .filter(p => {
+                          if (!personaSearchQuery.trim()) return true;
+                          const q = personaSearchQuery.toLowerCase();
+                          return (
+                            p.name.toLowerCase().includes(q) ||
+                            (p.role || "").toLowerCase().includes(q) ||
+                            (p.badge || "").toLowerCase().includes(q) ||
+                            (p.domains || []).some(d => d.toLowerCase().includes(q))
+                          );
+                        })
+                        .map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/50 transition-colors">
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-2xs"
+                                  style={{ backgroundColor: p.avatar_color || "#6366f1" }}
+                                >
+                                  {p.initials || p.name.slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                    <span>{p.name}</span>
+                                    {p.is_default && (
+                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[9px] font-bold">
+                                        <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" /> Default
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 dark:text-slate-400">{p.role}</div>
+                                  {p.affiliation && (
+                                    <div className="text-[9px] text-slate-400 italic truncate max-w-xs">{p.affiliation}</div>
+                                  )}
+                                </div>
+                              </div>
                             </td>
                             <td className="py-3 px-3">
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
-                                {p.subject_tag}
+                              <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                                {p.badge || "Expert"}
                               </span>
                             </td>
-                            <td className="py-3 px-3 max-w-xs truncate text-slate-500 dark:text-slate-400" title={p.system_prompt}>
-                              {p.system_prompt}
+                            <td className="py-3 px-3 max-w-xs">
+                              <div className="flex flex-wrap gap-1">
+                                {(p.specialties || []).slice(0, 3).map((spec, sIdx) => (
+                                  <span key={sIdx} className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px]">
+                                    {spec}
+                                  </span>
+                                ))}
+                                {(p.specialties || []).length > 3 && (
+                                  <span className="text-[9px] text-slate-400">+{p.specialties.length - 3}</span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 px-3">
                               {p.is_active ? (
@@ -1197,32 +1443,201 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                               )}
                             </td>
                             <td className="py-3 px-3 text-right">
-                              <button
-                                onClick={() => handleTogglePersonaActive(p.id, p.is_active)}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors inline-flex items-center gap-1 cursor-pointer ${
-                                  p.is_active
-                                    ? "bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:hover:bg-rose-900 dark:text-rose-400"
-                                    : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:hover:bg-emerald-900 dark:text-emerald-400"
-                                }`}
-                              >
-                                {p.is_active ? (
-                                  <>
-                                    <Ban className="w-3 h-3" /> Deactivate
-                                  </>
-                                ) : (
-                                  <>
-                                    <Check className="w-3 h-3" /> Activate
-                                  </>
-                                )}
-                              </button>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => setEditingPersona(p)}
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold transition-colors cursor-pointer"
+                                  title="Edit Persona"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => handleTogglePersonaActive(p.id, p.is_active)}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors inline-flex items-center gap-1 cursor-pointer ${
+                                    p.is_active
+                                      ? "bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:hover:bg-rose-900 dark:text-rose-400"
+                                      : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:hover:bg-emerald-900 dark:text-emerald-400"
+                                  }`}
+                                >
+                                  {p.is_active ? <Ban className="w-3 h-3" /> : <Check className="w-3 h-3" />}
+                                  {p.is_active ? "Deactivate" : "Activate"}
+                                </button>
+                                <button
+                                  onClick={() => handleDeletePersona(p.id, true)}
+                                  className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900 text-rose-600 dark:text-rose-400 text-[10px] font-bold transition-colors cursor-pointer"
+                                  title="Permanent Delete"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
-                        ))
-                      )}
+                        ))}
                     </tbody>
                   </table>
                 </div>
               </div>
+
+              {/* Edit Persona Modal Overlay */}
+              {editingPersona && (
+                <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative overflow-hidden text-slate-800 dark:text-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <Edit2 className="w-4 h-4 text-indigo-500" />
+                        Edit Expert Persona: {editingPersona.name}
+                      </h3>
+                      <button
+                        onClick={() => setEditingPersona(null)}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleSaveEditPersona} className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Name</label>
+                        <input
+                          type="text"
+                          value={editingPersona.name}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, name: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Role</label>
+                        <input
+                          type="text"
+                          value={editingPersona.role}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, role: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Badge / Category</label>
+                        <input
+                          type="text"
+                          value={editingPersona.badge}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, badge: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Avatar Color</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={editingPersona.avatar_color || "#6366f1"}
+                            onChange={(e) => setEditingPersona({ ...editingPersona, avatar_color: e.target.value })}
+                            className="w-8 h-8 rounded border border-slate-200 dark:border-slate-700 cursor-pointer p-0"
+                          />
+                          <input
+                            type="text"
+                            value={editingPersona.avatar_color || "#6366f1"}
+                            onChange={(e) => setEditingPersona({ ...editingPersona, avatar_color: e.target.value })}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Affiliation</label>
+                        <input
+                          type="text"
+                          value={editingPersona.affiliation || ""}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, affiliation: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Specialties (comma-separated)</label>
+                        <input
+                          type="text"
+                          value={(editingPersona.specialties || []).join(", ")}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, specialties: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Domains (comma-separated)</label>
+                        <input
+                          type="text"
+                          value={(editingPersona.domains || []).join(", ")}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, domains: e.target.value.split(",").map(d => d.trim().toLowerCase()).filter(Boolean) })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Opener Template</label>
+                        <input
+                          type="text"
+                          value={editingPersona.opener_template || ""}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, opener_template: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">System Instruction Prompt</label>
+                        <textarea
+                          rows={4}
+                          value={editingPersona.system_prompt || ""}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, system_prompt: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={editingPersona.is_active}
+                            onChange={(e) => setEditingPersona({ ...editingPersona, is_active: e.target.checked })}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                          />
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">Active</span>
+                        </label>
+
+                        <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={editingPersona.is_default || false}
+                            onChange={(e) => setEditingPersona({ ...editingPersona, is_default: e.target.checked })}
+                            className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4"
+                          />
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">Default Persona</span>
+                        </label>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingPersona(null)}
+                          className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors cursor-pointer"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
 
             </div>
           )}

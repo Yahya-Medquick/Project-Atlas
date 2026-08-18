@@ -385,3 +385,27 @@ export interface Persona {
   created_at?: string;
 }
 
+export interface ExpertPersona {
+  id: string;
+  slug: string;
+  name: string;
+  initials: string;
+  role: string;
+  affiliation?: string | null;
+  badge: string;
+  avatar_color?: string;
+  specialties: string[];
+  domains: string[];
+  description?: string | null;
+  personality?: string | null;
+  opener_template?: string | null;
+  system_prompt: string;
+  is_active: boolean;
+  is_default?: boolean;
+  display_order?: number;
+  match_score?: number | string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+
