@@ -56,27 +56,36 @@ function getPersonaDescription(persona: Persona): string {
   const tag = (persona.subject_tag || "").toLowerCase();
   const name = (persona.name || "").toLowerCase();
 
-  if (tag.includes("physics") || name.includes("physics")) {
-    return "Formulas, numericals & concept clarity";
+  if (tag.includes("quantum") || name.includes("thorne") || name.includes("saif")) {
+    return "Quantum computing, decoherence & theoretical physics";
   }
-  if (tag.includes("chemistry") || name.includes("chemistry")) {
-    return "Reactions, equations & syllabus mastery";
+  if (tag.includes("neuro") || name.includes("vasquez") || name.includes("farooq")) {
+    return "Neuroplasticity, memory, cognition & mindfulness";
   }
-  if (tag.includes("career") || name.includes("career")) {
-    return "MDCAT, ECAT, university merits & roadmap";
+  if (tag.includes("software") || name.includes("reid") || name.includes("chaudhry")) {
+    return "Distributed systems, backend scale & API architecture";
   }
-  if (tag.includes("study") || tag.includes("planner") || name.includes("planner")) {
-    return "Custom schedules & board exam strategies";
+  if (tag.includes("biology") || tag.includes("genomics") || name.includes("zhou") || name.includes("razzaq")) {
+    return "CRISPR gene editing, molecular biology & genomics";
   }
-  if (tag.includes("wellness") || name.includes("wellness") || tag.includes("mental")) {
-    return "Exam stress relief & motivation support";
+  if (tag.includes("economics") || name.includes("petrov") || name.includes("husain")) {
+    return "Monetary policy, macro modeling & systemic risk";
+  }
+  if (tag.includes("law") || name.includes("okonkwo") || name.includes("khalid")) {
+    return "IP law, AI regulation, GDPR & startup compliance";
+  }
+  if (tag.includes("data science") || name.includes("romero") || name.includes("malik")) {
+    return "ML pipelines, statistical models & recommendation engines";
+  }
+  if (tag.includes("safety") || tag.includes("ethics") || name.includes("patel") || name.includes("hussain")) {
+    return "AI alignment, interpretability & technology ethics";
   }
 
   if (persona.system_prompt) {
     const firstSentence = persona.system_prompt.split(".")[0];
     return firstSentence.replace(/^You are (an?|the) /i, "").trim() + ".";
   }
-  return "Personalized academic guidance and 1-on-1 support";
+  return "Specialized 1-on-1 consultation & domain mentorship";
 }
 
 export const PersonaSuggestions: React.FC<PersonaSuggestionsProps> = ({

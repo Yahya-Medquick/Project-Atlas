@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from "react";
+import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { CategoryType, Entity, Persona } from "./types";
 import { useTheme } from "./hooks/useTheme";
 import { useBookmarks } from "./hooks/useBookmarks";
@@ -15,6 +15,7 @@ import { AuthModal } from "./components/AuthModal";
 import { Footer } from "./components/Footer";
 import { NotesSidePanel } from "./components/NotesSidePanel";
 import { useNotes } from "./hooks/useNotes";
+import { EXPERTS, EXPERTS_PK } from "./data/experts";
 import {
   Sparkles,
   Network,
@@ -68,11 +69,28 @@ export default function App() {
   const [loadedCategories, setLoadedCategories] = useState<Set<CategoryType>>(new Set());
 
   // Counseling Personas Cache & Pre-selection State
-  const [personas, setPersonas] = useState<Persona[]>([]);
+  const defaultExpertList: Persona[] = useMemo(() => {
+    const expertSet = mode === "learning" ? EXPERTS_PK : EXPERTS;
+    return Object.values(expertSet).map((exp) => ({
+      id: exp.id,
+      name: exp.name,
+      avatar_emoji: exp.initials,
+      subject_tag: exp.badge,
+      system_prompt: exp.system_prompt,
+      is_active: true,
+    }));
+  }, [mode]);
+
+  const [personas, setPersonas] = useState<Persona[]>(defaultExpertList);
   const [isLoadingPersonas, setIsLoadingPersonas] = useState(false);
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | undefined>(undefined);
 
-  // Fetch personas on initial load
+  // Sync personas when mode changes
+  useEffect(() => {
+    setPersonas(defaultExpertList);
+  }, [defaultExpertList]);
+
+  // Fetch optional custom admin personas on initial load
   useEffect(() => {
     let isMounted = true;
     const loadPersonas = async () => {
@@ -81,8 +99,11 @@ export default function App() {
         const res = await fetch("/api/personas");
         if (res.ok) {
           const data = await res.json();
-          if (isMounted) {
-            setPersonas(data);
+          if (isMounted && Array.isArray(data) && data.length > 0) {
+            // Keep default personas and append active custom DB personas if any
+            const existingIds = new Set(defaultExpertList.map((p) => p.id));
+            const custom = data.filter((p: any) => !existingIds.has(p.id));
+            setPersonas([...defaultExpertList, ...custom]);
           }
         }
       } catch (err) {
@@ -95,7 +116,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [defaultExpertList]);
 
   // Automatically reset category if not allowed in the current mode and reset dropdown on mode switch
   useEffect(() => {

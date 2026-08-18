@@ -2259,27 +2259,36 @@ app.get("/api/counsel/session/:personaId", async (req: Request, res: Response) =
 // POST /api/counsel - Chat with Persona. Apply 25 req/min rate limit.
 app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response) => {
   try {
-    const { personaId, messages } = req.body || {};
-    if (!personaId || !Array.isArray(messages)) {
-      return res.status(400).json({ error: "personaId and messages array are required." });
+    const { personaId, systemPrompt, messages } = req.body || {};
+    if ((!personaId && !systemPrompt) || !Array.isArray(messages)) {
+      return res.status(400).json({ error: "personaId or systemPrompt and messages array are required." });
     }
 
+    let resolvedSystemPrompt = systemPrompt;
     let persona: any = null;
-    if (dbPool) {
-      try {
-        const result = await dbPool.query("SELECT * FROM personas WHERE id = $1 LIMIT 1", [personaId]);
-        if (result.rows.length > 0) {
-          persona = result.rows[0];
+
+    if (personaId) {
+      if (dbPool) {
+        try {
+          const result = await dbPool.query("SELECT * FROM personas WHERE id = $1 LIMIT 1", [personaId]);
+          if (result.rows.length > 0) {
+            persona = result.rows[0];
+            resolvedSystemPrompt = persona.system_prompt;
+          }
+        } catch (e) {
+          // UUID lookup fallback
         }
-      } catch (e) {
-        console.warn("Invalid persona UUID lookup:", personaId);
       }
-    } else {
-      persona = inMemoryPersonas.find(p => p.id === personaId);
+      if (!persona) {
+        persona = inMemoryPersonas.find(p => p.id === personaId);
+        if (persona) {
+          resolvedSystemPrompt = persona.system_prompt;
+        }
+      }
     }
 
-    if (!persona || !persona.is_active) {
-      return res.status(404).json({ error: "Persona not found or inactive." });
+    if (!resolvedSystemPrompt) {
+      resolvedSystemPrompt = "You are a world-class domain expert specialist and mentor. Provide thorough, evidence-based, insightful and clear guidance.";
     }
 
     // Map message list to Gemini contents format
@@ -2291,7 +2300,7 @@ app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response)
     // Generate output reply using Gemini
     const result = await callGeminiWithFallback({
       contents,
-      systemInstruction: persona.system_prompt
+      systemInstruction: resolvedSystemPrompt
     });
 
     const reply = result.text.trim();
@@ -2300,11 +2309,12 @@ app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response)
     const user = getCurrentUser(req);
     if (user) {
       const updatedMessages = [...messages, { role: "assistant", content: reply }];
+      const resolvedPersonaId = persona?.id || personaId || "expert";
       if (dbPool) {
         try {
           const sessionRes = await dbPool.query(
             "SELECT id FROM counseling_sessions WHERE user_id = $1 AND persona_id = $2 LIMIT 1",
-            [user.id, persona.id]
+            [user.id, resolvedPersonaId]
           );
           if (sessionRes.rows.length > 0) {
             await dbPool.query(
@@ -2314,21 +2324,21 @@ app.post("/api/counsel", counselRateLimiter, async (req: Request, res: Response)
           } else {
             await dbPool.query(
               "INSERT INTO counseling_sessions (user_id, persona_id, messages) VALUES ($1, $2, $3)",
-              [user.id, persona.id, JSON.stringify(updatedMessages)]
+              [user.id, resolvedPersonaId, JSON.stringify(updatedMessages)]
             );
           }
         } catch (dbErr) {
-          console.warn("Error updating session in DB:", dbErr);
+          // UUID type or DB table insert fallback
         }
       } else {
-        const sessionIdx = inMemoryCounselingSessions.findIndex(s => s.user_id === user.id && s.persona_id === persona.id);
+        const sessionIdx = inMemoryCounselingSessions.findIndex(s => s.user_id === user.id && s.persona_id === resolvedPersonaId);
         if (sessionIdx > -1) {
           inMemoryCounselingSessions[sessionIdx].messages = updatedMessages;
         } else {
           inMemoryCounselingSessions.push({
             id: Math.random().toString(36).substring(7),
             user_id: user.id,
-            persona_id: persona.id,
+            persona_id: resolvedPersonaId,
             messages: updatedMessages,
             created_at: new Date()
           });
