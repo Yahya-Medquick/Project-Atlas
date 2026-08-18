@@ -441,12 +441,13 @@ export default function App() {
                   <Suspense fallback={
                     <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-2xl p-8 text-center space-y-4 shadow-xs">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-                      <p className="text-xs text-slate-500">Loading AI Expert Counseling...</p>
+                      <p className="text-xs text-slate-500">Loading AI Expert Specialist...</p>
                     </div>
                   }>
                     <CounselingCard
                       defaultPersonaId={selectedPersonaId}
                       onClearDefaultPersona={() => setSelectedPersonaId(undefined)}
+                      topic={query}
                     />
                   </Suspense>
                 ) : activeCategory === "notes" ? (

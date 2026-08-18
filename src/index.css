@@ -3,3 +3,116 @@
 
 @variant dark (.dark &);
 
+/* ─────────────────────────────────────────────────────────────
+   GLOBAL CONTRAST & SEMANTIC COLOR TOKENS (TASK 1)
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --text-primary: #0f1117;
+  --text-secondary: #3d3f4a;
+  --text-tertiary: #6b6f80;
+  --text-on-accent: #ffffff;
+  --text-accent: #4f46e5;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fc;
+  --bg-tertiary: #f1f3f9;
+  --bg-card: #ffffff;
+  --border-color: #e2e4ed;
+
+  /* ─────────────────────────────────────────────────────────────
+     TYPE SCALE & TYPOGRAPHY METRICS (TASK 2)
+     ───────────────────────────────────────────────────────────── */
+  --font-xs: 0.75rem;    /* 12px - timestamps, badges */
+  --font-sm: 0.875rem;   /* 14px - secondary text, meta */
+  --font-base: 1rem;     /* 16px - body, inputs, buttons */
+  --font-md: 1.125rem;   /* 18px - subheadings, card titles */
+  --font-lg: 1.25rem;    /* 20px - section headers */
+  --font-xl: 1.5rem;     /* 24px - page titles */
+  --font-2xl: 1.875rem;  /* 30px - display */
+  --font-3xl: 2.25rem;   /* 36px - hero */
+
+  --lh-tight: 1.25;
+  --lh-snug: 1.375;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.625;
+  --lh-loose: 1.75;
+}
+
+.dark {
+  --text-primary: #f0f1f6;
+  --text-secondary: #b8bac8;
+  --text-tertiary: #7e8299;
+  --text-on-accent: #ffffff;
+  --text-accent: #818cf8;
+  --bg-primary: #0b0d14;
+  --bg-secondary: #12151f;
+  --bg-tertiary: #1a1d2b;
+  --bg-card: #141724;
+  --border-color: #222638;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   GLOBAL RESPONSIVE & MOBILE CONSTRAINTS (TASK 3)
+   ───────────────────────────────────────────────────────────── */
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  line-height: var(--lh-normal);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+img, video, iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Hide scrollbars cleanly across browsers */
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Utility semantic color classes for guaranteed contrast */
+.text-theme-primary {
+  color: var(--text-primary);
+}
+
+.text-theme-secondary {
+  color: var(--text-secondary);
+}
+
+.text-theme-tertiary {
+  color: var(--text-tertiary);
+}
+
+.text-theme-accent {
+  color: var(--text-accent);
+}
+
+.bg-theme-card {
+  background-color: var(--bg-card);
+}
+
+.bg-theme-secondary {
+  background-color: var(--bg-secondary);
+}
+
+.border-theme {
+  border-color: var(--border-color);
+}

@@ -13,8 +13,8 @@ import {
   History,
   Lock,
   Activity,
-  Clock,
   Compass,
+  Brain,
 } from "lucide-react";
 import { CategoryInfo, CategoryType, TabUsage } from "../types";
 import { useUser } from "../context/UserContext";
@@ -32,9 +32,9 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: "related", label: "Related Topics", shortLabel: "Graph", iconName: "Network", description: "Knowledge graph & connected node network" },
   { id: "recommendations", label: "Recommendations", shortLabel: "Recs", iconName: "Sparkles", description: "Smart AI recommendations & curated topics" },
   { id: "history", label: "History", shortLabel: "History", iconName: "History", description: "Your persistent search history, pins & stars" },
-  // Learning Mode Custom/Placeholder Tabs
-  { id: "qa", label: "Learning Q&A", shortLabel: "Q&A", iconName: "MessageSquare", description: "Punjab/Federal Board syllabus learning chatbot" },
-  { id: "counseling", label: "Counseling", shortLabel: "Counsel", iconName: "Compass", description: "Syllabus, subject selection & study advisor" },
+  // Learning Mode Custom/Specialist Tabs
+  { id: "qa", label: "Learning Q&A", shortLabel: "Q&A", iconName: "MessageSquare", description: "Syllabus learning & interactive QA chatbot" },
+  { id: "counseling", label: "Expert", shortLabel: "Expert", iconName: "Brain", description: "1-on-1 discussion with domain research specialists" },
   { id: "notes", label: "Notes", shortLabel: "Notes", iconName: "FileText", description: "Notes taking and summary generator" },
 ];
 
@@ -97,6 +97,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
       case "Sparkles": return <Sparkles className="w-4 h-4" />;
       case "History": return <History className="w-4 h-4 text-amber-500" />;
       case "Compass": return <Compass className="w-4 h-4" />;
+      case "Brain": return <Brain className="w-4 h-4 text-indigo-500" />;
       default: return <BookOpen className="w-4 h-4" />;
     }
   };
@@ -107,7 +108,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
   return (
     <div className="w-full border-b border-slate-200/60 dark:border-slate-800/60 bg-white/95 dark:bg-slate-950/95 sticky top-14 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row md:items-center justify-between gap-2">
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2.5">
           {filteredCategories.map((cat) => {
             const isActive = activeCategory === cat.id;
             const isLoaded = loadedCategories.has(cat.id);
@@ -118,9 +119,9 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
                 key={cat.id}
                 onClick={() => onSelectCategory(cat.id)}
                 aria-label={`Switch to ${cat.label} tab`}
-                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0 select-none ${
+                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0 select-none cursor-pointer ${
                   isActive
-                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold"
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold shadow-xs"
                     : isProtected
                     ? "text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100/60 dark:hover:bg-slate-900/60"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-900/60"
@@ -135,7 +136,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
 
                 {/* Loaded Indicator Dot */}
                 {isLoaded && !isActive && (
-                  <span className="w-1 h-1 rounded-full bg-slate-400/60" title="Cached" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500/70 dark:bg-indigo-400/70" title="Loaded" />
                 )}
               </button>
             );
