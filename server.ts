@@ -2604,7 +2604,7 @@ app.get("/api/v1/personas", async (req: Request, res: Response) => {
       const result = await dbPool.query(
         `SELECT id, slug, name, initials, role, affiliation, badge, avatar_color,
                 specialties, domains, description, personality, opener_template,
-                system_prompt, is_active, is_default, display_order, created_at, updated_at
+                system_prompt, is_active, is_default, display_order, variant, created_at, updated_at
          FROM expert_personas
          WHERE is_active = true
          ORDER BY display_order ASC, created_at ASC`
@@ -2886,7 +2886,7 @@ app.patch("/api/v1/personas/admin/:id", async (req: Request, res: Response) => {
   try {
     if (dbPool) {
       if (updates.is_default === true) {
-        await dbPool.query(`UPDATE expert_personas SET is_default = false WHERE id != $1 AND is_default = true`, [id]);
+        await dbPool.query(`UPDATE expert_personas SET is_default = false WHERE id != $1::uuid AND is_default = true`, [id]);
       }
 
       updates.updated_at = new Date();
@@ -2894,7 +2894,7 @@ app.patch("/api/v1/personas/admin/:id", async (req: Request, res: Response) => {
       const values = [id, ...Object.values(updates)];
 
       const result = await dbPool.query(
-        `UPDATE expert_personas SET ${setClauses} WHERE id = $1 OR slug = $1 RETURNING *`,
+        `UPDATE expert_personas SET ${setClauses} WHERE id = $1::uuid RETURNING *`,
         values
       );
 
@@ -2938,11 +2938,11 @@ app.delete("/api/v1/personas/admin/:id", async (req: Request, res: Response) => 
   try {
     if (dbPool) {
       if (hard) {
-        await dbPool.query(`DELETE FROM expert_personas WHERE id = $1 OR slug = $1`, [id]);
+        await dbPool.query(`DELETE FROM expert_personas WHERE id = $1::uuid`, [id]);
         return res.json({ success: true, message: "Persona permanently deleted." });
       } else {
         const result = await dbPool.query(
-          `UPDATE expert_personas SET is_active = false, updated_at = now() WHERE id = $1 OR slug = $1 RETURNING slug`,
+          `UPDATE expert_personas SET is_active = false, updated_at = now() WHERE id = $1::uuid RETURNING slug`,
           [id]
         );
         if (!result.rows[0]) {
@@ -2985,8 +2985,8 @@ app.patch("/api/v1/personas/admin/:id/reorder", async (req: Request, res: Respon
   try {
     if (dbPool) {
       await dbPool.query(
-        `UPDATE expert_personas SET display_order = $1, updated_at = now() WHERE id = $2 OR slug = $2`,
-        [Number(display_order), id]
+        `UPDATE expert_personas SET display_order = $2, updated_at = now() WHERE id = $1::uuid`,
+        [id, Number(display_order)]
       );
       return res.json({ success: true });
     } else {

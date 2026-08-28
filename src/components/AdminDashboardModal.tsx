@@ -333,6 +333,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const handleTogglePersonaActive = async (id: string, currentActive: boolean) => {
     try {
       await adminTogglePersona(id, !currentActive, adminToken);
+      window.dispatchEvent(new CustomEvent('personas-updated'));
       setRefreshMessage("Persona status updated successfully!");
       fetchAdminData();
       setTimeout(() => setRefreshMessage(null), 3000);
@@ -349,6 +350,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     }
     try {
       await adminDeletePersona(id, hard, adminToken);
+      window.dispatchEvent(new CustomEvent('personas-updated'));
       setRefreshMessage("Persona deleted successfully.");
       fetchAdminData();
       setTimeout(() => setRefreshMessage(null), 3000);
@@ -398,6 +400,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         adminToken
       );
 
+      window.dispatchEvent(new CustomEvent('personas-updated'));
       setRefreshMessage(`Expert persona "${newPersonaName}" created successfully!`);
       setNewPersonaName("");
       setNewPersonaSlug("");
@@ -438,6 +441,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     try {
       await adminReorderPersona(currentPersona.id, targetOrder, adminToken);
       await adminReorderPersona(targetPersona.id, currentOrder, adminToken);
+      window.dispatchEvent(new CustomEvent('personas-updated'));
       setRefreshMessage("Personas reordered successfully.");
       fetchAdminData();
       setTimeout(() => setRefreshMessage(null), 3000);
@@ -474,6 +478,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       for (let i = 0; i < newPersonas.length; i++) {
         await adminReorderPersona(newPersonas[i].id, i + 1, adminToken);
       }
+      window.dispatchEvent(new CustomEvent('personas-updated'));
       setRefreshMessage("Reordered personas successfully!");
       fetchAdminData();
       setTimeout(() => setRefreshMessage(null), 3000);
@@ -490,6 +495,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
     try {
       await adminUpdatePersona(editingPersona.id, editingPersona, adminToken);
+      window.dispatchEvent(new CustomEvent('personas-updated'));
       setRefreshMessage(`Persona "${editingPersona.name}" updated successfully!`);
       setEditingPersona(null);
       fetchAdminData();

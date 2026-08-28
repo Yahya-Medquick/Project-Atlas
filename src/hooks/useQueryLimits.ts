@@ -123,6 +123,17 @@ export function useQueryLimits() {
       return false;
     }
 
+    // Synchronous immediate decrement for real-time UI responsiveness
+    setUsage(prev => {
+      const nextRemaining = Math.max(0, prev.remaining - 1);
+      const nextCount = prev.count + 1;
+      return {
+        ...prev,
+        count: nextCount,
+        remaining: nextRemaining,
+      };
+    });
+
     const today = getUtcTodayDate();
     const deviceId = getOrCreateDeviceId();
 
