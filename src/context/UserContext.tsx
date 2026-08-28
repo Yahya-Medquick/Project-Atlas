@@ -1,19 +1,29 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { UserAuth, UserProfile, TabUsage, CategoryType } from "../types";
-import { fetchCurrentUser, googleLogin, logoutUser, fetchTabUsage, registerUser, verifyEmail, loginWithEmail, updatePreferencesMode } from "../services/api";
+import {
+  fetchCurrentUser,
+  logoutUser,
+  fetchTabUsage,
+  registerWithPhone,
+  loginWithCredentials,
+  verifyNewDevice,
+  LoginResult,
+  updatePreferencesMode
+} from "../services/api";
 
 interface UserContextType {
   user: UserAuth | null;
   isLoggedIn: boolean;
+  isGuest: boolean;
   isLoadingAuth: boolean;
   profile: UserProfile;
   mode: "research" | "learning";
   toggleMode: () => void;
   setMode: (mode: "research" | "learning") => void;
-  loginWithGoogle: (payload: { idToken?: string; credential?: string; email?: string; name?: string; avatarUrl?: string }) => Promise<void>;
-  registerUser: (email: string, name: string) => Promise<{ message: string }>;
-  verifyEmail: (token: string, password: string) => Promise<UserAuth>;
-  loginWithEmail: (email: string, password: string) => Promise<UserAuth>;
+  registerUser: (payload: { username: string; password: string; phone: string }) => Promise<UserAuth>;
+  loginUser: (username: string, password: string) => Promise<LoginResult>;
+  verifyNewDeviceUser: (payload: { username: string; password: string; phone: string }) => Promise<UserAuth>;
+  continueAsGuest: () => void;
   logout: () => Promise<void>;
   checkUsage: (tab: CategoryType) => Promise<TabUsage | null>;
   updateProfile: (updated: Partial<UserProfile>) => Promise<void>;
@@ -21,8 +31,10 @@ interface UserContextType {
 }
 
 const defaultProfile: UserProfile = {
-  name: "Guest User",
-  email: "guest@bifrost.ai",
+  name: "Guest Explorer",
+  username: "guest",
+  phone: "",
+  email: "",
   role: "Explorer",
   savedSearches: [],
   recentSearches: [],
@@ -36,15 +48,16 @@ const defaultProfile: UserProfile = {
 const UserContext = createContext<UserContextType>({
   user: null,
   isLoggedIn: false,
+  isGuest: false,
   isLoadingAuth: true,
   profile: defaultProfile,
   mode: "research",
   toggleMode: () => {},
   setMode: () => {},
-  loginWithGoogle: async () => {},
-  registerUser: async () => ({ message: "" }),
-  verifyEmail: async () => ({} as UserAuth),
-  loginWithEmail: async () => ({} as UserAuth),
+  registerUser: async () => ({} as UserAuth),
+  loginUser: async () => ({}),
+  verifyNewDeviceUser: async () => ({} as UserAuth),
+  continueAsGuest: () => {},
   logout: async () => {},
   checkUsage: async () => null,
   updateProfile: async () => {},
@@ -53,6 +66,9 @@ const UserContext = createContext<UserContextType>({
 
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserAuth | null>(null);
+  const [isGuest, setIsGuest] = useState<boolean>(() => {
+    return localStorage.getItem("bifrost_guest_mode") === "true";
+  });
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
   const [mode, setMode] = useState<"research" | "learning">(() => {
@@ -65,17 +81,22 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const authUser = await fetchCurrentUser();
         if (authUser) {
           setUser(authUser);
+          setIsGuest(false);
+          localStorage.removeItem("bifrost_guest_mode");
           if (authUser.preferred_mode) {
             setMode(authUser.preferred_mode);
           }
           setProfile((prev) => ({
             ...prev,
-            name: authUser.name || prev.name,
+            name: authUser.name || authUser.username || prev.name,
+            username: authUser.username || prev.username,
+            phone: authUser.phone || prev.phone,
             email: authUser.email || prev.email,
           }));
         } else {
           setUser(null);
-          // When not logged in, read from localStorage
+          const wasGuest = localStorage.getItem("bifrost_guest_mode") === "true";
+          setIsGuest(wasGuest);
           const savedMode = localStorage.getItem("bifrost_mode");
           if (savedMode === "research" || savedMode === "learning") {
             setMode(savedMode);
@@ -117,77 +138,94 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const loginWithGoogle = async (payload: { idToken?: string; credential?: string; email?: string; name?: string; avatarUrl?: string }) => {
+  const handleRegisterUser = async (payload: { username: string; password: string; phone: string }) => {
     try {
-      const res = await googleLogin(payload);
-      if (res.user) {
-        setUser(res.user);
-        if (res.user.preferred_mode) {
-          setMode(res.user.preferred_mode);
-        }
-        setProfile((prev) => ({
-          ...prev,
-          name: res.user.name,
-          email: res.user.email,
-        }));
-      }
-    } catch (err) {
-      console.error("Login with Google failed:", err);
-      throw err;
-    }
-  };
-
-  const handleRegisterUser = async (email: string, name: string) => {
-    return await registerUser(email, name);
-  };
-
-  const handleVerifyEmail = async (token: string, password: string) => {
-    try {
-      const authUser = await verifyEmail(token, password);
+      const authUser = await registerWithPhone(payload);
       if (authUser) {
         setUser(authUser);
+        setIsGuest(false);
         if (authUser.preferred_mode) {
           setMode(authUser.preferred_mode);
         }
         setProfile((prev) => ({
           ...prev,
-          name: authUser.name,
-          email: authUser.email,
+          name: authUser.name || authUser.username || prev.name,
+          username: authUser.username || prev.username,
+          phone: authUser.phone || prev.phone,
         }));
       }
       return authUser;
     } catch (err) {
-      console.error("Email verification failed in context:", err);
+      console.error("Registration failed in context:", err);
       throw err;
     }
   };
 
-  const handleLoginWithEmail = async (email: string, password: string) => {
+  const handleLoginUser = async (username: string, password: string): Promise<LoginResult> => {
     try {
-      const authUser = await loginWithEmail(email, password);
+      const result = await loginWithCredentials(username, password);
+      if (result.user && !result.requiresOtp) {
+        setUser(result.user);
+        setIsGuest(false);
+        if (result.user.preferred_mode) {
+          setMode(result.user.preferred_mode);
+        }
+        setProfile((prev) => ({
+          ...prev,
+          name: result.user?.name || result.user?.username || prev.name,
+          username: result.user?.username || prev.username,
+          phone: result.user?.phone || prev.phone,
+        }));
+      }
+      return result;
+    } catch (err) {
+      console.error("Login failed in context:", err);
+      throw err;
+    }
+  };
+
+  const handleVerifyNewDeviceUser = async (payload: { username: string; password: string; phone: string }) => {
+    try {
+      const authUser = await verifyNewDevice(payload);
       if (authUser) {
         setUser(authUser);
+        setIsGuest(false);
         if (authUser.preferred_mode) {
           setMode(authUser.preferred_mode);
         }
         setProfile((prev) => ({
           ...prev,
-          name: authUser.name,
-          email: authUser.email,
+          name: authUser.name || authUser.username || prev.name,
+          username: authUser.username || prev.username,
+          phone: authUser.phone || prev.phone,
         }));
       }
       return authUser;
     } catch (err) {
-      console.error("Login with email failed in context:", err);
+      console.error("Device verification failed in context:", err);
       throw err;
     }
+  };
+
+  const continueAsGuest = () => {
+    setIsGuest(true);
+    setUser(null);
+    localStorage.setItem("bifrost_guest_mode", "true");
+    setProfile((prev) => ({
+      ...prev,
+      name: "Guest Explorer",
+      username: "guest",
+      role: "Explorer",
+    }));
   };
 
   const logout = async () => {
     try {
       await logoutUser();
       setUser(null);
+      setIsGuest(false);
       setMode("research");
+      setProfile(defaultProfile);
     } catch (err) {
       console.warn("Logout error:", err);
     }
@@ -218,15 +256,16 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         isLoggedIn: !!user,
+        isGuest,
         isLoadingAuth,
         profile,
         mode,
         toggleMode,
         setMode: setModeExplicit,
-        loginWithGoogle,
         registerUser: handleRegisterUser,
-        verifyEmail: handleVerifyEmail,
-        loginWithEmail: handleLoginWithEmail,
+        loginUser: handleLoginUser,
+        verifyNewDeviceUser: handleVerifyNewDeviceUser,
+        continueAsGuest,
         logout,
         checkUsage,
         updateProfile,

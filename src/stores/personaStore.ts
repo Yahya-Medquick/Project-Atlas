@@ -1,23 +1,24 @@
-import { ExpertPersona } from "../types";
+import { ExpertPersona, EXPERTS, EXPERTS_PK } from "../data/experts";
 
 const BASE_URL = '/api/v1/personas';
 
-// In-memory cache so we don't re-fetch on every tab switch
+// In-memory cache so we don't re-fetch unnecessarily
 let _cache: ExpertPersona[] | null = null;
 let _cacheTime = 0;
-const CACHE_TTL = 60_000; // 1 minute
+const CACHE_TTL = 3_000; // 3 seconds TTL for fast updates
 
 // ─── Public API (used by Expert tab) ──────────────────────────
 
 /**
- * Fetch all active personas. Uses cache if fresh.
+ * Fetch all active personas. Uses cache if fresh unless forceRefresh is true.
  */
-export async function fetchPersonas(): Promise<ExpertPersona[]> {
+export async function fetchPersonas(variant?: string, forceRefresh: boolean = false): Promise<ExpertPersona[]> {
   const now = Date.now();
-  if (_cache && now - _cacheTime < CACHE_TTL) return _cache;
+  if (!forceRefresh && _cache && now - _cacheTime < CACHE_TTL) return _cache;
 
   try {
-    const res = await fetch(`${BASE_URL}`);
+    const url = variant ? `${BASE_URL}?variant=${variant}` : `${BASE_URL}`;
+    const res = await fetch(url);
     const data = await res.json();
     if (!data.success) {
       throw new Error(data.error || "Failed to fetch personas");
@@ -31,6 +32,60 @@ export async function fetchPersonas(): Promise<ExpertPersona[]> {
     if (_cache && _cache.length > 0) return _cache;
     throw err;
   }
+}
+
+/**
+ * Organize personas into global and Pakistani expert maps.
+ */
+export function organizePersonasByVariant(personas: ExpertPersona[]): {
+  globalExperts: Record<string, ExpertPersona>;
+  pkExperts: Record<string, ExpertPersona>;
+} {
+  const globalExperts: Record<string, ExpertPersona> = {};
+  const pkExperts: Record<string, ExpertPersona> = {};
+
+  for (const p of personas) {
+    if (!p.is_active && p.is_active !== undefined) continue;
+
+    const openerFunc = (topic: string) => {
+      if (p.opener_template) {
+        return p.opener_template
+          .replace(/\{topic\}/g, topic)
+          .replace(/\{name\}/g, p.name);
+      }
+      return `I see you are exploring **${topic}**. How can I assist your research or learning on this subject?`;
+    };
+
+    const personaObj: ExpertPersona = {
+      ...p,
+      id: p.id || p.slug,
+      specialties: Array.isArray(p.specialties) ? p.specialties : [],
+      domains: Array.isArray(p.domains) ? p.domains : [],
+      opener: p.opener || openerFunc,
+    };
+
+    const key = p.slug || p.id;
+    if (p.variant === 'pk') {
+      const cleanKey = key.replace(/_pk$/, '');
+      pkExperts[cleanKey] = personaObj;
+      pkExperts[p.id] = personaObj;
+      pkExperts[p.slug] = personaObj;
+    } else {
+      globalExperts[key] = personaObj;
+      globalExperts[p.id] = personaObj;
+      globalExperts[p.slug] = personaObj;
+    }
+  }
+
+  // Fallbacks if set is empty
+  if (Object.keys(globalExperts).length === 0) {
+    Object.assign(globalExperts, EXPERTS);
+  }
+  if (Object.keys(pkExperts).length === 0) {
+    Object.assign(pkExperts, EXPERTS_PK);
+  }
+
+  return { globalExperts, pkExperts };
 }
 
 /**
@@ -72,6 +127,9 @@ export function buildOpener(persona: ExpertPersona | null, topic: string): strin
 export function invalidatePersonaCache(): void {
   _cache = null;
   _cacheTime = 0;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('personas-updated'));
+  }
 }
 
 // ─── Admin API (used by Admin tab only) ───────────────────────

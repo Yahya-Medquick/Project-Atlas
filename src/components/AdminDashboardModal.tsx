@@ -23,6 +23,11 @@ import {
   Edit2,
   Star,
   Sparkles,
+  ArrowUp,
+  ArrowDown,
+  GripVertical,
+  Globe,
+  MapPin,
 } from "lucide-react";
 import { AdminStats, Entity, ExpertPersona } from "../types";
 import {
@@ -31,6 +36,7 @@ import {
   adminUpdatePersona,
   adminDeletePersona,
   adminTogglePersona,
+  adminReorderPersona,
 } from "../stores/personaStore";
 
 interface AdminDashboardModalProps {
@@ -66,6 +72,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [newPersonaOpener, setNewPersonaOpener] = useState("");
   const [newPersonaPrompt, setNewPersonaPrompt] = useState("");
   const [newPersonaIsDefault, setNewPersonaIsDefault] = useState(false);
+  const [newPersonaVariant, setNewPersonaVariant] = useState<"global" | "pk">("global");
+  const [newPersonaDisplayOrder, setNewPersonaDisplayOrder] = useState<number>(1);
+  const [newPersonaIsActive, setNewPersonaIsActive] = useState(true);
+  const [draggedPersonaId, setDraggedPersonaId] = useState<string | null>(null);
 
   // Editing Persona state
   const [editingPersona, setEditingPersona] = useState<ExpertPersona | null>(null);
@@ -351,35 +361,39 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const handleCreatePersona = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPersonaName.trim() || !newPersonaRole.trim() || !newPersonaBadge.trim()) {
-      setRefreshMessage("Name, Role, and Badge are required.");
+    if (!newPersonaName.trim()) {
+      setRefreshMessage("Name is required.");
       setTimeout(() => setRefreshMessage(null), 3000);
       return;
     }
 
     try {
+      const badgeVal = newPersonaBadge.trim() || newPersonaDomains.trim() || "Expert";
+      const roleVal = newPersonaRole.trim() || "Counselor & Advisor";
+
       await adminCreatePersona(
         {
           name: newPersonaName.trim(),
           slug: newPersonaSlug.trim() || undefined,
           initials: newPersonaInitials.trim() || undefined,
-          role: newPersonaRole.trim(),
+          role: roleVal,
           affiliation: newPersonaAffiliation.trim() || undefined,
-          badge: newPersonaBadge.trim(),
+          badge: badgeVal,
           avatar_color: newPersonaAvatarColor.trim() || "#6366f1",
           specialties: newPersonaSpecialties
             ? newPersonaSpecialties.split(",").map(s => s.trim()).filter(Boolean)
             : [],
           domains: newPersonaDomains
             ? newPersonaDomains.split(",").map(d => d.trim().toLowerCase()).filter(Boolean)
-            : [],
+            : [badgeVal.toLowerCase()].filter(Boolean),
           description: newPersonaDescription.trim() || undefined,
           personality: newPersonaPersonality.trim() || undefined,
           opener_template: newPersonaOpener.trim() || undefined,
           system_prompt: newPersonaPrompt.trim() || undefined,
-          is_active: true,
+          is_active: newPersonaIsActive,
           is_default: newPersonaIsDefault,
-          display_order: personas.length + 1,
+          display_order: newPersonaDisplayOrder || personas.length + 1,
+          variant: newPersonaVariant,
         },
         adminToken
       );
@@ -399,12 +413,74 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       setNewPersonaOpener("");
       setNewPersonaPrompt("");
       setNewPersonaIsDefault(false);
+      setNewPersonaVariant("global");
+      setNewPersonaDisplayOrder(personas.length + 2);
+      setNewPersonaIsActive(true);
       fetchAdminData();
       setTimeout(() => setRefreshMessage(null), 3000);
     } catch (err: any) {
       console.warn("Failed to add new persona:", err);
       setRefreshMessage(err?.message || "Failed to create persona");
       setTimeout(() => setRefreshMessage(null), 3000);
+    }
+  };
+
+  const handleMovePersona = async (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= personas.length) return;
+
+    const currentPersona = personas[index];
+    const targetPersona = personas[targetIndex];
+
+    const currentOrder = currentPersona.display_order ?? (index + 1);
+    const targetOrder = targetPersona.display_order ?? (targetIndex + 1);
+
+    try {
+      await adminReorderPersona(currentPersona.id, targetOrder, adminToken);
+      await adminReorderPersona(targetPersona.id, currentOrder, adminToken);
+      setRefreshMessage("Personas reordered successfully.");
+      fetchAdminData();
+      setTimeout(() => setRefreshMessage(null), 3000);
+    } catch (err: any) {
+      console.warn("Failed to reorder personas:", err);
+      setRefreshMessage(err?.message || "Failed to reorder personas");
+      setTimeout(() => setRefreshMessage(null), 3000);
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedPersonaId(id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!draggedPersonaId || draggedPersonaId === targetId) return;
+
+    const sourceIdx = personas.findIndex(p => p.id === draggedPersonaId);
+    const targetIdx = personas.findIndex(p => p.id === targetId);
+    if (sourceIdx === -1 || targetIdx === -1) return;
+
+    const newPersonas = [...personas];
+    const [moved] = newPersonas.splice(sourceIdx, 1);
+    newPersonas.splice(targetIdx, 0, moved);
+
+    try {
+      for (let i = 0; i < newPersonas.length; i++) {
+        await adminReorderPersona(newPersonas[i].id, i + 1, adminToken);
+      }
+      setRefreshMessage("Reordered personas successfully!");
+      fetchAdminData();
+      setTimeout(() => setRefreshMessage(null), 3000);
+    } catch (err: any) {
+      console.warn("Failed drag reorder:", err);
+    } finally {
+      setDraggedPersonaId(null);
     }
   };
 
@@ -1164,7 +1240,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             <div className="space-y-6">
               
               {/* Header Stats / Overview */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                   <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Personas</div>
                   <div className="text-xl font-bold text-slate-900 dark:text-white mt-1">{personas.length}</div>
@@ -1173,6 +1249,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Active Personas</div>
                   <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
                     {personas.filter(p => p.is_active).length}
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">Regional Variants</div>
+                  <div className="text-xs font-bold text-slate-900 dark:text-white mt-2 flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
+                      Global: {personas.filter(p => p.variant !== 'pk').length}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300">
+                      Pakistani: {personas.filter(p => p.variant === 'pk').length}
+                    </span>
                   </div>
                 </div>
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
@@ -1228,24 +1315,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Initials (optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. AT"
-                      maxLength={4}
-                      value={newPersonaInitials}
-                      onChange={(e) => setNewPersonaInitials(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono uppercase"
-                    />
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Regional Variant *</label>
+                    <select
+                      value={newPersonaVariant}
+                      onChange={(e) => setNewPersonaVariant(e.target.value as "global" | "pk")}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                    >
+                      <option value="global">Global Expert (Standard)</option>
+                      <option value="pk">Pakistani Variant (Local Insights)</option>
+                    </select>
                   </div>
 
                   <div>
-                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Slug (optional)</label>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Display Order</label>
                     <input
-                      type="text"
-                      placeholder="e.g. aris"
-                      value={newPersonaSlug}
-                      onChange={(e) => setNewPersonaSlug(e.target.value)}
+                      type="number"
+                      min={1}
+                      value={newPersonaDisplayOrder}
+                      onChange={(e) => setNewPersonaDisplayOrder(Number(e.target.value))}
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
                     />
                   </div>
@@ -1268,7 +1355,52 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="md:col-span-2">
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Initials (optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. AT"
+                      maxLength={4}
+                      value={newPersonaInitials}
+                      onChange={(e) => setNewPersonaInitials(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Slug (optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. aris"
+                      value={newPersonaSlug}
+                      onChange={(e) => setNewPersonaSlug(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-4 pt-5">
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none font-semibold text-slate-700 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={newPersonaIsActive}
+                        onChange={(e) => setNewPersonaIsActive(e.target.checked)}
+                        className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                      />
+                      <span>Active</span>
+                    </label>
+
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none font-semibold text-slate-700 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={newPersonaIsDefault}
+                        onChange={(e) => setNewPersonaIsDefault(e.target.checked)}
+                        className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4"
+                      />
+                      <span>Default Persona</span>
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-3">
                     <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Affiliation / Background</label>
                     <input
                       type="text"
@@ -1277,18 +1409,6 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       onChange={(e) => setNewPersonaAffiliation(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                     />
-                  </div>
-
-                  <div className="flex items-center pt-5">
-                    <label className="inline-flex items-center gap-2 cursor-pointer select-none font-semibold text-slate-700 dark:text-slate-300">
-                      <input
-                        type="checkbox"
-                        checked={newPersonaIsDefault}
-                        onChange={(e) => setNewPersonaIsDefault(e.target.checked)}
-                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
-                      />
-                      <span>Set as Default Persona</span>
-                    </label>
                   </div>
 
                   <div className="md:col-span-3">
@@ -1325,7 +1445,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </div>
 
                   <div className="md:col-span-3">
-                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">System Instruction Prompt</label>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">System Instruction Prompt *</label>
                     <textarea
                       rows={3}
                       placeholder="You are Dr. Aris Thorne, a Quantum Information Theorist. Speak with precision. Use thought experiments..."
@@ -1369,9 +1489,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
+                        <th className="py-2.5 px-2 w-12 text-center">Order</th>
                         <th className="py-2.5 px-3">Expert</th>
+                        <th className="py-2.5 px-3">Variant</th>
                         <th className="py-2.5 px-3">Badge & Domain</th>
-                        <th className="py-2.5 px-3">Specialties</th>
                         <th className="py-2.5 px-3">Status</th>
                         <th className="py-2.5 px-3 text-right">Actions</th>
                       </tr>
@@ -1385,11 +1506,49 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                             p.name.toLowerCase().includes(q) ||
                             (p.role || "").toLowerCase().includes(q) ||
                             (p.badge || "").toLowerCase().includes(q) ||
+                            (p.variant || "").toLowerCase().includes(q) ||
                             (p.domains || []).some(d => d.toLowerCase().includes(q))
                           );
                         })
-                        .map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/50 transition-colors">
+                        .map((p, idx) => (
+                          <tr
+                            key={p.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, p.id)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, p.id)}
+                            className={`hover:bg-slate-50/50 dark:hover:bg-slate-950/50 transition-colors ${
+                              draggedPersonaId === p.id ? "opacity-40 bg-indigo-50/50" : ""
+                            }`}
+                          >
+                            <td className="py-3 px-2 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <span className="cursor-grab text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                  <GripVertical className="w-3.5 h-3.5" />
+                                </span>
+                                <div className="flex flex-col">
+                                  <button
+                                    type="button"
+                                    disabled={idx === 0}
+                                    onClick={() => handleMovePersona(idx, "up")}
+                                    className="text-slate-400 hover:text-indigo-600 disabled:opacity-20 cursor-pointer p-0.5"
+                                    title="Move Up"
+                                  >
+                                    <ArrowUp className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={idx === personas.length - 1}
+                                    onClick={() => handleMovePersona(idx, "down")}
+                                    className="text-slate-400 hover:text-indigo-600 disabled:opacity-20 cursor-pointer p-0.5"
+                                    title="Move Down"
+                                  >
+                                    <ArrowDown className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <span className="font-mono text-[10px] text-slate-400 font-semibold">{p.display_order ?? (idx + 1)}</span>
+                              </div>
+                            </td>
                             <td className="py-3 px-3">
                               <div className="flex items-center gap-2.5">
                                 <div
@@ -1415,21 +1574,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                               </div>
                             </td>
                             <td className="py-3 px-3">
+                              {p.variant === 'pk' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
+                                  <MapPin className="w-3 h-3 text-emerald-500" /> Pakistani
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800">
+                                  <Globe className="w-3 h-3 text-blue-500" /> Global
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
                               <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
                                 {p.badge || "Expert"}
                               </span>
-                            </td>
-                            <td className="py-3 px-3 max-w-xs">
-                              <div className="flex flex-wrap gap-1">
-                                {(p.specialties || []).slice(0, 3).map((spec, sIdx) => (
-                                  <span key={sIdx} className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px]">
-                                    {spec}
-                                  </span>
-                                ))}
-                                {(p.specialties || []).length > 3 && (
-                                  <span className="text-[9px] text-slate-400">+{p.specialties.length - 3}</span>
-                                )}
-                              </div>
                             </td>
                             <td className="py-3 px-3">
                               {p.is_active ? (
@@ -1530,6 +1688,29 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       </div>
 
                       <div>
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Regional Variant</label>
+                        <select
+                          value={editingPersona.variant || "global"}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, variant: e.target.value as "global" | "pk" })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                        >
+                          <option value="global">Global Expert</option>
+                          <option value="pk">Pakistani Variant</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Display Order</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={editingPersona.display_order ?? 1}
+                          onChange={(e) => setEditingPersona({ ...editingPersona, display_order: Number(e.target.value) })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
+                        />
+                      </div>
+
+                      <div>
                         <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Avatar Color</label>
                         <div className="flex items-center gap-2">
                           <input
@@ -1603,7 +1784,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                             type="checkbox"
                             checked={editingPersona.is_active}
                             onChange={(e) => setEditingPersona({ ...editingPersona, is_active: e.target.checked })}
-                            className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                            className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
                           />
                           <span className="font-semibold text-slate-700 dark:text-slate-300">Active</span>
                         </label>

@@ -1,4 +1,5 @@
 import { CategoryApiResponse, CategoryType, UserAuth } from "../types";
+import { getOrCreateDeviceId } from "./firebaseAuth";
 
 // In-Memory Caches
 const clientMemoryCache = new Map<string, { data: CategoryApiResponse; expiresAt: number }>();
@@ -13,10 +14,14 @@ const AUTOCOMPLETE_CACHE_TTL = 1000 * 60 * 10; // 10 minutes autocomplete cache
 
 export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("bifrost_session_token");
+  const deviceId = getOrCreateDeviceId();
+  const headers: Record<string, string> = {
+    "X-Device-Id": deviceId,
+  };
   if (token) {
-    return { Authorization: `Bearer ${token}` };
+    headers["Authorization"] = `Bearer ${token}`;
   }
-  return {};
+  return headers;
 }
 
 export async function fetchTabUsage(tab: CategoryType) {
@@ -111,73 +116,102 @@ export async function clearHistory() {
   }
 }
 
-export async function googleLogin(payload: { idToken?: string; credential?: string; email?: string; name?: string; avatarUrl?: string }) {
-  const res = await fetch("/api/auth/google", {
+export async function checkOtpRateLimit(payload: {
+  phone: string;
+  username?: string;
+  attemptType: "registration" | "new_device";
+}): Promise<{ success: boolean; message?: string; remainingAttempts?: number; phone?: string; phoneMasked?: string }> {
+  const deviceId = getOrCreateDeviceId();
+  const res = await fetch("/api/auth/request-otp", {
     method: "POST",
-    credentials: "include",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, deviceId }),
   });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || "Google login failed");
-  }
-  const data = await res.json();
-  if (data.token) {
-    localStorage.setItem("bifrost_session_token", data.token);
+    throw new Error(data.error || "Failed to request OTP. Please try again.");
   }
   return data;
 }
 
-export async function registerUser(email: string, name: string): Promise<{ message: string }> {
+export async function registerWithPhone(payload: {
+  username: string;
+  password: string;
+  phone: string;
+}): Promise<UserAuth> {
+  const deviceId = getOrCreateDeviceId();
   const res = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ email, name }),
+    body: JSON.stringify({ ...payload, deviceId }),
   });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || "Registration failed");
+    throw new Error(data.error || "Registration failed");
   }
-  return await res.json();
-}
-
-export async function verifyEmail(token: string, password: string): Promise<UserAuth> {
-  const res = await fetch("/api/auth/verify-email", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ token, password }),
-  });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || "Email verification failed");
-  }
-  const data = await res.json();
   if (data.token) {
     localStorage.setItem("bifrost_session_token", data.token);
+    localStorage.removeItem("bifrost_guest_mode");
   }
   return data.user;
 }
 
-export async function loginWithEmail(email: string, password: string): Promise<UserAuth> {
+export interface LoginResult {
+  success?: boolean;
+  user?: UserAuth;
+  requiresOtp?: boolean;
+  phone?: string;
+  phoneMasked?: string;
+  message?: string;
+  token?: string;
+}
+
+export async function loginWithCredentials(
+  username: string,
+  password: string
+): Promise<LoginResult> {
+  const deviceId = getOrCreateDeviceId();
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password, deviceId }),
   });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || "Login failed");
+    throw new Error(data.error || "Invalid username or password");
   }
-  const data = await res.json();
   if (data.token) {
     localStorage.setItem("bifrost_session_token", data.token);
+    localStorage.removeItem("bifrost_guest_mode");
+  }
+  return data;
+}
+
+export async function verifyNewDevice(payload: {
+  username: string;
+  password: string;
+  phone: string;
+}): Promise<UserAuth> {
+  const deviceId = getOrCreateDeviceId();
+  const res = await fetch("/api/auth/verify-new-device", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ ...payload, deviceId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || "Device verification failed");
+  }
+  if (data.token) {
+    localStorage.setItem("bifrost_session_token", data.token);
+    localStorage.removeItem("bifrost_guest_mode");
   }
   return data.user;
 }
 
 export async function logoutUser() {
   localStorage.removeItem("bifrost_session_token");
+  localStorage.removeItem("bifrost_guest_mode");
   const res = await fetch("/api/auth/logout", {
     method: "POST",
     credentials: "include",
@@ -186,7 +220,7 @@ export async function logoutUser() {
   return res.ok;
 }
 
-export async function fetchCurrentUser() {
+export async function fetchCurrentUser(): Promise<UserAuth | null> {
   try {
     const res = await fetch("/api/auth/me", {
       credentials: "include",
@@ -194,6 +228,9 @@ export async function fetchCurrentUser() {
     });
     if (!res.ok) return null;
     const data = await res.json();
+    if (data.token) {
+      localStorage.setItem("bifrost_session_token", data.token);
+    }
     return data.user || null;
   } catch (err) {
     console.warn("fetchCurrentUser error:", err);

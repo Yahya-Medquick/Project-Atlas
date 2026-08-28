@@ -3,22 +3,8 @@
 // Full specifications for all 8 experts + Pakistani variants
 // ============================================================
 
-export interface ExpertPersona {
-  id: string;
-  name: string;
-  initials: string;
-  role: string;
-  affiliation: string;
-  badge: string;
-  status: string;
-  avatar_color: string;
-  specialties: string[];
-  domains: string[];
-  description: string;
-  personality: string;
-  opener: (topic: string) => string;
-  system_prompt: string;
-}
+import { ExpertPersona } from '../types';
+export type { ExpertPersona };
 
 // ============================================================
 // SECTION 1: ORIGINAL EXPERTS (as shown in the UI)

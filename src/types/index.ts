@@ -16,13 +16,16 @@ export type CategoryType =
 
 export interface UserAuth {
   id: string;
+  username?: string;
+  phone?: string;
   google_id?: string;
-  email: string;
-  name: string;
+  email?: string;
+  name?: string;
   avatar_url?: string;
   tier: 'free' | 'logged_out' | 'paid';
   created_at?: string;
   preferred_mode?: 'research' | 'learning';
+  is_guest?: boolean;
 }
 
 export interface TabUsage {
@@ -293,7 +296,9 @@ export interface AdminStats {
 
 export interface UserProfile {
   name: string;
-  email: string;
+  username?: string;
+  phone?: string;
+  email?: string;
   role: 'Explorer' | 'Researcher' | 'Admin';
   savedSearches: string[];
   recentSearches: string[];
@@ -387,22 +392,25 @@ export interface Persona {
 
 export interface ExpertPersona {
   id: string;
-  slug: string;
+  slug?: string;
   name: string;
   initials: string;
   role: string;
   affiliation?: string | null;
   badge: string;
+  status?: string;
   avatar_color?: string;
   specialties: string[];
   domains: string[];
   description?: string | null;
   personality?: string | null;
   opener_template?: string | null;
+  opener?: (topic: string) => string;
   system_prompt: string;
-  is_active: boolean;
+  is_active?: boolean;
   is_default?: boolean;
   display_order?: number;
+  variant?: 'global' | 'pk';
   match_score?: number | string;
   created_at?: string;
   updated_at?: string;

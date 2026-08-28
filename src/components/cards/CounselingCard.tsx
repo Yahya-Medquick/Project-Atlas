@@ -18,12 +18,11 @@ import { useNotes } from "../../hooks/useNotes";
 import { useUser } from "../../context/UserContext";
 import { getAuthHeaders } from "../../services/api";
 import {
-  EXPERTS,
-  EXPERTS_PK,
   ExpertPersona,
   matchExpert,
   getExpertChips
 } from "../../data/experts";
+import { usePersonas } from "../../hooks/usePersonas";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -66,7 +65,8 @@ export const CounselingCard: React.FC<CounselingCardProps> = ({
     return mode === "learning" ? "pk" : "global";
   });
 
-  const activeExpertSet = variant === "pk" ? EXPERTS_PK : EXPERTS;
+  const { globalExperts, pkExperts } = usePersonas();
+  const activeExpertSet = variant === "pk" ? pkExperts : globalExperts;
 
   // Auto-match expert based on topic
   const initialMatchedExpert = useMemo(() => {

@@ -1,607 +1,470 @@
-import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
-import { CategoryType, Entity, Persona } from "./types";
-import { useTheme } from "./hooks/useTheme";
-import { useBookmarks } from "./hooks/useBookmarks";
-import { useCategoryData } from "./hooks/useCategoryData";
-import { useUser } from "./context/UserContext";
-import { Header } from "./components/Header";
-import { SearchBar } from "./components/SearchBar";
-import { PersonaSuggestions } from "./components/PersonaSuggestions";
-import { CategoryTabs } from "./components/CategoryTabs";
-import { TopicHero } from "./components/TopicHero";
-import { CategoryViewer } from "./components/CategoryViewer";
-import { SidebarInsights } from "./components/SidebarInsights";
-import { AuthModal } from "./components/AuthModal";
-import { Footer } from "./components/Footer";
-import { NotesSidePanel } from "./components/NotesSidePanel";
-import { useNotes } from "./hooks/useNotes";
-import { EXPERTS, EXPERTS_PK } from "./data/experts";
-import {
-  Sparkles,
-  Network,
-  GraduationCap,
-  FileText,
-} from "lucide-react";
+import React, { useState, useEffect, useMemo, lazy, Suspense, useCallback } from 'react';
+import { useTheme } from './hooks/useTheme';
+import { useBookmarks } from './hooks/useBookmarks';
+import { useNotes } from './hooks/useNotes';
+import { useUser } from './context/UserContext';
+import { useChatSessions } from './hooks/useChatSessions';
+import { useQueryLimits } from './hooks/useQueryLimits';
+import { initPersistentDeviceId } from './utils/deviceFingerprint';
+import { getAuthHeaders } from './services/api';
+import { ChatSidebar } from './components/chat/ChatSidebar';
+import { PersonaPanel } from './components/chat/PersonaPanel';
+import { ChatStage } from './components/chat/ChatStage';
+import { PaywallModal } from './components/chat/PaywallModal';
+import { PwaShortcutModal } from './components/chat/PwaShortcutModal';
+import { AuthModal } from './components/AuthModal';
+import { NotesSidePanel } from './components/NotesSidePanel';
+import { ExpertPersona, matchExpert } from './data/experts';
+import { usePersonas } from './hooks/usePersonas';
+import { ChatMode, ChatMessage } from './types/chat';
 
-// Lazy-loaded components for Bundle Optimization
-const VerifyPage = lazy(() =>
-  import("./components/VerifyPage").then((m) => ({ default: m.VerifyPage }))
-);
+// Lazy-loaded secondary modals for optimal performance
 const BookmarksModal = lazy(() =>
-  import("./components/BookmarksModal").then((m) => ({ default: m.BookmarksModal }))
+  import('./components/BookmarksModal').then((m) => ({ default: m.BookmarksModal }))
 );
 const AdminDashboardModal = lazy(() =>
-  import("./components/AdminDashboardModal").then((m) => ({ default: m.AdminDashboardModal }))
+  import('./components/AdminDashboardModal').then((m) => ({ default: m.AdminDashboardModal }))
 );
 const UserProfileModal = lazy(() =>
-  import("./components/UserProfileModal").then((m) => ({ default: m.UserProfileModal }))
+  import('./components/UserProfileModal').then((m) => ({ default: m.UserProfileModal }))
 );
 const TopicCompareModal = lazy(() =>
-  import("./components/TopicCompareModal").then((m) => ({ default: m.TopicCompareModal }))
+  import('./components/TopicCompareModal').then((m) => ({ default: m.TopicCompareModal }))
 );
 const TopicTimelineModal = lazy(() =>
-  import("./components/TopicTimelineModal").then((m) => ({ default: m.TopicTimelineModal }))
+  import('./components/TopicTimelineModal').then((m) => ({ default: m.TopicTimelineModal }))
 );
 const DeveloperApiModal = lazy(() =>
-  import("./components/DeveloperApiModal").then((m) => ({ default: m.DeveloperApiModal }))
+  import('./components/DeveloperApiModal').then((m) => ({ default: m.DeveloperApiModal }))
 );
-
-const LearningQACard = lazy(() =>
-  import("./components/cards/LearningQACard").then((m) => ({ default: m.LearningQACard }))
+const CompiledNotesModal = lazy(() =>
+  import('./components/CompiledNotesModal').then((m) => ({ default: m.CompiledNotesModal }))
 );
-
-const CounselingCard = lazy(() =>
-  import("./components/cards/CounselingCard").then((m) => ({ default: m.CounselingCard }))
-);
-
-const NotesCard = lazy(() =>
-  import("./components/cards/NotesCard").then((m) => ({ default: m.NotesCard }))
+const KnowledgeGraphModal = lazy(() =>
+  import('./components/KnowledgeGraphModal').then((m) => ({ default: m.KnowledgeGraphModal }))
 );
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
   const { bookmarks, addBookmark, removeBookmark, isBookmarked } = useBookmarks();
-  const { profile, mode, setMode } = useUser();
+  const { notes, addNote } = useNotes();
+  const { user, isLoggedIn } = useUser();
 
-  const [query, setQuery] = useState<string>("");
-  const [activeCategory, setActiveCategory] = useState<CategoryType>("overview");
-  const [searchCategory, setSearchCategory] = useState<CategoryType | "all">("all");
-  const [loadedCategories, setLoadedCategories] = useState<Set<CategoryType>>(new Set());
+  // Chat sessions state manager
+  const {
+    sessions,
+    activeSessionId,
+    activeSession,
+    selectSession,
+    createSession,
+    updateSessionMessages,
+    updateSessionMeta,
+    togglePinSession,
+    renameSession,
+    deleteSession,
+  } = useChatSessions();
 
-  // Counseling Personas Cache & Pre-selection State
-  const defaultExpertList: Persona[] = useMemo(() => {
-    const expertSet = mode === "learning" ? EXPERTS_PK : EXPERTS;
-    return Object.values(expertSet).map((exp) => ({
-      id: exp.id,
-      name: exp.name,
-      avatar_emoji: exp.initials,
-      subject_tag: exp.badge,
-      system_prompt: exp.system_prompt,
-      is_active: true,
-    }));
-  }, [mode]);
+  // Query usage & paywall tracker
+  const {
+    usage,
+    canExecuteQuery,
+    recordQueryExecution,
+    isPaywallOpen,
+    triggerPaywall,
+    closePaywall,
+  } = useQueryLimits();
 
-  const [personas, setPersonas] = useState<Persona[]>(defaultExpertList);
-  const [isLoadingPersonas, setIsLoadingPersonas] = useState(false);
-  const [selectedPersonaId, setSelectedPersonaId] = useState<string | undefined>(undefined);
-
-  // Sync personas when mode changes
+  // Initialize device fingerprinting on first app load
   useEffect(() => {
-    setPersonas(defaultExpertList);
-  }, [defaultExpertList]);
-
-  // Fetch optional custom admin personas on initial load
-  useEffect(() => {
-    let isMounted = true;
-    const loadPersonas = async () => {
-      setIsLoadingPersonas(true);
-      try {
-        const res = await fetch("/api/personas");
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && Array.isArray(data) && data.length > 0) {
-            // Keep default personas and append active custom DB personas if any
-            const existingIds = new Set(defaultExpertList.map((p) => p.id));
-            const custom = data.filter((p: any) => !existingIds.has(p.id));
-            setPersonas([...defaultExpertList, ...custom]);
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to fetch counseling personas:", err);
-      } finally {
-        if (isMounted) setIsLoadingPersonas(false);
-      }
-    };
-    loadPersonas();
-    return () => {
-      isMounted = false;
-    };
-  }, [defaultExpertList]);
-
-  // Automatically reset category if not allowed in the current mode and reset dropdown on mode switch
-  useEffect(() => {
-    const allowed = mode === "research"
-      ? ["overview", "research", "software", "news", "communities", "related"]
-      : ["overview", "education", "videos", "qa", "counseling"];
-    if (!allowed.includes(activeCategory)) {
-      setActiveCategory("overview");
-    }
-    // On mode switch, dropdown resets to "All Categories"
-    setSearchCategory("all");
-  }, [mode]);
-
-  // Modal States
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
-  const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isCompareOpen, setIsCompareOpen] = useState(false);
-  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
-  const [isApiDocsOpen, setIsApiDocsOpen] = useState(false);
-
-  // Notes Sidebar state
-  const [isNotesOpen, setIsNotesOpen] = useState(false);
-  const { notes } = useNotes();
-
-  // Routing State
-  const [currentPath, setCurrentPath] = useState<string>(window.location.pathname);
-
-  // Entity Resolution State
-  const [currentEntity, setCurrentEntity] = useState<Entity | null>(null);
-  const [matchedAlias, setMatchedAlias] = useState<string | null>(null);
-  const [rankingScore, setRankingScore] = useState<number>(95);
-  const [synonymsConnected, setSynonymsConnected] = useState<string[]>([]);
-
-  // Search History LocalStorage
-  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem("atlas_recent_searches");
-      return saved ? JSON.parse(saved) : ["Gravity", "Quantum Computing", "Machine Learning"];
-    } catch (e) {
-      return ["Gravity", "Quantum Computing"];
-    }
-  });
-
-  const addRecentSearch = (q: string) => {
-    if (!q.trim()) return;
-    setRecentSearches((prev) => {
-      const filtered = prev.filter((item) => item.toLowerCase() !== q.toLowerCase());
-      const updated = [q.trim(), ...filtered].slice(0, 10);
-      try {
-        localStorage.setItem("atlas_recent_searches", JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
+    initPersistentDeviceId().catch((err) => {
+      console.warn("Device fingerprint init warning:", err);
     });
-  };
-
-  const clearRecentSearches = () => {
-    setRecentSearches([]);
-    try {
-      localStorage.removeItem("atlas_recent_searches");
-    } catch (e) {}
-  };
-
-  // Fetch Semantic Entity Information on Search
-  const fetchEntityData = async (searchTopic: string) => {
-    if (!searchTopic) return;
-    try {
-      const res = await fetch(`/api/entities/search?q=${encodeURIComponent(searchTopic)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setCurrentEntity(data.matchedEntity || null);
-        setMatchedAlias(data.matchedAlias || null);
-        setRankingScore(data.rankingScore || 92);
-        setSynonymsConnected(data.synonymsConnected || []);
-      }
-    } catch (err) {
-      console.warn("Error fetching semantic entity data:", err);
-    }
-  };
-
-  // Sync URL search params and listen for popstate (browser back/forward navigation)
-  useEffect(() => {
-    const syncFromUrl = () => {
-      const pathname = window.location.pathname;
-      setCurrentPath(pathname);
-      let qParam = "";
-      
-      if (pathname.startsWith("/topic/")) {
-        const slug = pathname.replace("/topic/", "").trim();
-        if (slug) {
-          qParam = decodeURIComponent(slug).replace(/-/g, " ");
-        }
-      }
-
-      if (!qParam) {
-        const params = new URLSearchParams(window.location.search);
-        qParam = params.get("q") || "";
-      }
-
-      const params = new URLSearchParams(window.location.search);
-      const catParam = (params.get("cat") || "overview") as CategoryType;
-
-      setQuery(qParam);
-      setActiveCategory(catParam);
-      if (qParam) {
-        fetchEntityData(qParam);
-      }
-    };
-
-    syncFromUrl();
-
-    window.addEventListener("popstate", syncFromUrl);
-    return () => window.removeEventListener("popstate", syncFromUrl);
   }, []);
 
-  // Trigger automatic search query persistence and synthesis into Supabase PostgreSQL (Step 2)
+  // Layout panel collapse states (responsive defaults: open on desktop, closed on mobile)
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState<boolean>(() => window.innerWidth >= 1024);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState<boolean>(() => window.innerWidth >= 1280);
+
+  // Active persona region variant ('global' | 'pk')
+  const [expertVariant, setExpertVariant] = useState<'global' | 'pk'>('global');
+
+  // Loading state for Gemini stream
+  const [isLoadingMessage, setIsLoadingMessage] = useState<boolean>(false);
+
+  // Modals state
+  const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
+  const [isBookmarksOpen, setIsBookmarksOpen] = useState<boolean>(false);
+  const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
+  const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
+  const [isCompareOpen, setIsCompareOpen] = useState<boolean>(false);
+  const [isTimelineOpen, setIsTimelineOpen] = useState<boolean>(false);
+  const [isApiDocsOpen, setIsApiDocsOpen] = useState<boolean>(false);
+  const [isNotesOpen, setIsNotesOpen] = useState<boolean>(false);
+  const [isKnowledgeGraphOpen, setIsKnowledgeGraphOpen] = useState<boolean>(false);
+  const [compiledNotesModalState, setCompiledNotesModalState] = useState<{
+    isOpen: boolean;
+    compiledText: string;
+    subjectTags: string[];
+  }>({ isOpen: false, compiledText: '', subjectTags: [] });
+  const [pwaPersona, setPwaPersona] = useState<ExpertPersona | null>(null);
+
+  // Selected persona resolution
+  const { globalExperts, pkExperts } = usePersonas();
+  const activeExpertSet = expertVariant === 'pk' ? pkExperts : globalExperts;
+  const currentPersonaId = activeSession?.personaId || 'aris';
+  const activePersona: ExpertPersona =
+    activeExpertSet[currentPersonaId] || activeExpertSet['aris'] || Object.values(activeExpertSet)[0];
+
+  // Best domain match persona suggestion
+  const suggestedPersona = useMemo(() => {
+    if (!activeSession?.title) return undefined;
+    const match = matchExpert(activeSession.title, activeExpertSet);
+    return match?.id;
+  }, [activeSession?.title, activeExpertSet]);
+
+  // Initial bootstrap: create initial session if none exists or parse URL params
   useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed) {
-      fetch(`/api/search?q=${encodeURIComponent(trimmed)}`)
-        .then((res) => {
-          if (!res.ok) console.warn("Failed to persist search query:", res.statusText);
-        })
-        .catch((err) => {
-          console.warn("Error calling search persistence endpoint:", err);
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlSession = urlParams.get('session');
+    const urlPersona = urlParams.get('persona');
+    const urlMode = (urlParams.get('mode') || 'concept') as ChatMode;
+
+    if (urlSession && sessions.some((s) => s.id === urlSession)) {
+      selectSession(urlSession);
+      return;
+    }
+
+    if (sessions.length === 0) {
+      const initialPersonaId = urlPersona || 'aris';
+      createSession(initialPersonaId, urlMode, 'Quantum Physics & AI Foundations', 'Quantum Physics & AI Foundations', expertVariant);
+    } else if (!activeSessionId) {
+      selectSession(sessions[0].id);
+    }
+  }, [sessions, activeSessionId, createSession, selectSession, expertVariant]);
+
+  // Handle window resize to auto-adapt sidebars
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setIsLeftPanelOpen(false);
+      }
+      if (window.innerWidth < 1280) {
+        setIsRightPanelOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Keyboard shortcut: Ctrl+K or Cmd+K for New Chat
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        handleNewChat();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [createSession, expertVariant]);
+
+  // Create new chat
+  const handleNewChat = useCallback(() => {
+    const newSession = createSession('aris', 'concept', 'Explore Topic', 'New Chat', expertVariant);
+    if (window.innerWidth < 1024) {
+      setIsLeftPanelOpen(false);
+    }
+  }, [createSession, expertVariant]);
+
+  // Switch persona in ongoing chat session
+  const handleSelectPersona = useCallback(
+    (personaId: string, variant: 'global' | 'pk') => {
+      setExpertVariant(variant);
+      if (activeSession) {
+        const expertSet = variant === 'pk' ? pkExperts : globalExperts;
+        const persona = expertSet[personaId] || Object.values(expertSet)[0];
+        updateSessionMeta(activeSession.id, {
+          personaId: persona.id,
+          variant,
         });
+      }
+      if (window.innerWidth < 1024) {
+        setIsRightPanelOpen(false);
+      }
+    },
+    [activeSession, updateSessionMeta]
+  );
+
+  // Send message handler (invokes /api/chat/message with mode, specs, and persona prompt)
+  const handleSendMessage = async (content: string, modeOverride?: ChatMode) => {
+    if (!content.trim()) return;
+
+    if (!canExecuteQuery()) {
+      triggerPaywall();
+      return;
     }
-  }, [query]);
 
-  const updateUrlParams = (newQuery: string, newCat: CategoryType) => {
-    const params = new URLSearchParams();
-    if (newQuery) params.set("q", newQuery);
-    if (newCat && newCat !== "overview") params.set("cat", newCat);
+    const currentSession = activeSession || createSession('aris', 'concept', content.slice(0, 32));
+    const targetMode = modeOverride || currentSession.mode || 'concept';
 
-    const newUrl = `${window.location.pathname}?${params.toString()}`;
-    window.history.pushState({}, "", newUrl);
-  };
+    const userMessage: ChatMessage = {
+      id: `msg_${Date.now()}_u`,
+      role: 'user',
+      content: content.trim(),
+      timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      mode: targetMode,
+      personaId: currentSession.personaId,
+    };
 
-  const handleSearch = (newQuery: string, category?: CategoryType | "all") => {
-    const chosenCat = category !== undefined ? category : searchCategory;
-    const catToActivate: CategoryType = (chosenCat && chosenCat !== "all") ? chosenCat : "overview";
+    const newMessages = [...currentSession.messages, userMessage];
 
-    setQuery(newQuery);
-    setActiveCategory(catToActivate);
-    setLoadedCategories(new Set([catToActivate]));
-    setSelectedPersonaId(undefined);
-    setSearchCategory(chosenCat || "all");
-    addRecentSearch(newQuery);
-    updateUrlParams(newQuery, catToActivate);
-    fetchEntityData(newQuery);
-  };
+    // If first user message, update session title
+    const isFirstUserMsg = currentSession.messages.filter((m) => m.role === 'user').length === 0;
+    const newTitle = isFirstUserMsg ? content.trim().slice(0, 36) : currentSession.title;
 
-  const handleSelectCategory = (cat: CategoryType) => {
-    setActiveCategory(cat);
-    setLoadedCategories((prev) => new Set(prev).add(cat));
-    setSearchCategory(cat);
-    updateUrlParams(query, cat);
-  };
+    updateSessionMessages(currentSession.id, newMessages, newTitle);
+    setIsLoadingMessage(true);
 
-  const handleSelectSearchCategory = (cat: CategoryType | "all") => {
-    setSearchCategory(cat);
-    if (query && cat !== "all") {
-      setActiveCategory(cat);
-      setLoadedCategories((prev) => new Set(prev).add(cat));
-      updateUrlParams(query, cat);
+    try {
+      const response = await fetch('/api/chat/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          sessionId: currentSession.id,
+          personaId: currentSession.personaId,
+          mode: targetMode,
+          specs: currentSession.specs || {},
+          variant: currentSession.variant || expertVariant,
+          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          triggerPaywall();
+          throw new Error('Query limit reached. Upgrade to Pro.');
+        }
+        throw new Error(`Server returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      recordQueryExecution();
+
+      const assistantMessage: ChatMessage = {
+        id: `msg_${Date.now()}_a`,
+        role: 'assistant',
+        content: data.reply || 'No response received.',
+        timestamp: data.timestamp || new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+        mode: targetMode,
+        personaId: currentSession.personaId,
+      };
+
+      updateSessionMessages(currentSession.id, [...newMessages, assistantMessage], newTitle);
+    } catch (err: any) {
+      console.warn('Chat error, falling back to local fallback:', err);
+      // Fallback assistant response
+      const fallbackReply = `### ${activePersona.name} (${targetMode.toUpperCase()} MODE)\n\nThank you for exploring **${content.trim()}**.\n\n$$\\mathcal{H} |\\psi\\rangle = E |\\psi\\rangle$$\n\nHere is a foundational breakdown:\n1. **Core Mechanism**: In ${targetMode} mode, we analyze the structural invariants.\n2. **Next Steps**: Feel free to request step-by-step derivations or exam rubrics.`;
+
+      const fallbackMsg: ChatMessage = {
+        id: `msg_${Date.now()}_a`,
+        role: 'assistant',
+        content: fallbackReply,
+        timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+        mode: targetMode,
+        personaId: currentSession.personaId,
+      };
+
+      updateSessionMessages(currentSession.id, [...newMessages, fallbackMsg], newTitle);
+    } finally {
+      setIsLoadingMessage(false);
     }
   };
 
-  const handleSelectPersona = (persona: Persona) => {
-    if (mode === "research") {
-      setMode("learning");
-    }
-    setSelectedPersonaId(persona.id);
-    setActiveCategory("counseling");
-    setSearchCategory("counseling");
-    setLoadedCategories((prev) => new Set(prev).add("counseling"));
-    const targetTopic = persona.subject_tag || persona.name || "Academic Counseling";
-    const nextQuery = query || targetTopic;
-    setQuery(nextQuery);
-    updateUrlParams(nextQuery, "counseling");
+  // Save to Notes callback
+  const handleSaveToNotes = (content: string, title?: string) => {
+    const noteTitle = title || `${activePersona.name} Note`;
+    const subject = activeSession?.mode || 'General';
+    addNote(noteTitle, content, subject);
+    setIsNotesOpen(true);
   };
 
-  const handleGoHome = () => {
-    setQuery("");
-    setActiveCategory("overview");
-    setLoadedCategories(new Set());
-    setCurrentEntity(null);
-    setSelectedPersonaId(undefined);
-    setSearchCategory("all");
-    window.history.pushState({}, "", window.location.pathname);
-  };
-
-  // Category data fetching hook
-  const {
-    data,
-    isLoading,
-    isLoadingMore,
-    error,
-    isAutoRetrying,
-    retryCountdown,
-    autoRetryCount,
-    hasMore,
-    loadMore,
-    refetch,
-    matchMode,
-    setMatchMode,
-  } = useCategoryData(query, activeCategory);
-
-  const handleBookmarkItem = (item: any, cat: CategoryType) => {
-    const title = item.title || item.name || query;
-    const url = item.url || item.previewLink || item.pdfUrl || window.location.href;
-    const desc = item.description || item.abstract || item.summary || "";
-
+  // Save to Bookmarks callback
+  const handleSaveBookmark = (title: string, category: any, url?: string, description?: string) => {
     addBookmark({
-      topic: query,
+      topic: activeSession?.title || 'Knowledge',
       title,
-      category: cat,
-      url,
-      description: desc,
+      category: category || 'overview',
+      url: url || window.location.href,
+      description: description || '',
     });
   };
 
-  const checkIsBookmarked = (title: string, cat: CategoryType) => {
-    return isBookmarked(query, title, cat);
-  };
-
-  if (currentPath === "/verify") {
-    return (
-      <Suspense fallback={<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-slate-400">Loading Verification...</div>}>
-        <VerifyPage />
-      </Suspense>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-200">
-      {/* Skip Navigation Link for Accessibility */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 z-50 px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-lg focus:outline-none"
-      >
-        Skip to main content
-      </a>
-
-      {/* Navbar */}
-      <Header
-        theme={theme}
-        toggleTheme={toggleTheme}
+    <div className="h-screen w-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex overflow-hidden font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-200">
+      {/* 1. LEFT PANEL: CHAT HISTORY SIDEBAR */}
+      <ChatSidebar
+        isOpen={isLeftPanelOpen}
+        onToggle={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={(id) => {
+          selectSession(id);
+          if (window.innerWidth < 1024) setIsLeftPanelOpen(false);
+        }}
+        onNewChat={handleNewChat}
+        onRenameSession={renameSession}
+        onDeleteSession={deleteSession}
+        onPinSession={togglePinSession}
         onOpenBookmarks={() => setIsBookmarksOpen(true)}
         bookmarksCount={bookmarks.length}
-        onGoHome={handleGoHome}
+        onOpenNotes={() => setIsNotesOpen(true)}
+        notesCount={notes.length}
         onOpenAdmin={() => setIsAdminOpen(true)}
-        onOpenProfile={() => setIsProfileOpen(true)}
         onOpenApiDocs={() => setIsApiDocsOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
         onOpenLogin={() => setIsLoginOpen(true)}
-        onSelectCategory={handleSelectCategory}
-        currentQuery={query}
+        onOpenPaywall={triggerPaywall}
+        queryUsage={usage}
+        theme={theme}
+        toggleTheme={toggleTheme}
       />
 
-      {/* Main Content Area */}
-      <main id="main-content" className="flex-1">
-        {!query ? (
-          /* HOMEPAGE LANDING VIEW - Ultra-Minimalist & Direct */
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-20 md:py-32 flex flex-col items-center justify-center text-center space-y-8">
-            <div className="space-y-4">
-              <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                Explore <span className="text-indigo-600 dark:text-indigo-400">Knowledge</span>
-              </h1>
+      {/* 2. CENTER PANEL: MAIN CHAT STAGE */}
+      <ChatStage
+        session={activeSession}
+        activePersona={activePersona}
+        variant={expertVariant}
+        onSendMessage={handleSendMessage}
+        isLoading={isLoadingMessage}
+        onToggleLeftPanel={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
+        isLeftPanelOpen={isLeftPanelOpen}
+        onToggleRightPanel={() => setIsRightPanelOpen(!isRightPanelOpen)}
+        isRightPanelOpen={isRightPanelOpen}
+        onUpdateSessionMeta={updateSessionMeta}
+        onSaveToNotes={handleSaveToNotes}
+        onSaveBookmark={handleSaveBookmark}
+        onOpenPaywall={triggerPaywall}
+        onOpenKnowledgeGraph={() => setIsKnowledgeGraphOpen(true)}
+        queryUsage={usage}
+      />
 
-              <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 max-w-xl mx-auto font-normal leading-relaxed">
-                Multi-source intelligence across research papers, codebases, AI synthesis, and interactive roadmaps.
-              </p>
-            </div>
+      {/* 3. RIGHT PANEL: EXPERT PERSONA SELECTOR */}
+      <PersonaPanel
+        isOpen={isRightPanelOpen}
+        onToggle={() => setIsRightPanelOpen(!isRightPanelOpen)}
+        selectedPersonaId={currentPersonaId}
+        onSelectPersona={handleSelectPersona}
+        variant={expertVariant}
+        onToggleVariant={(v) => {
+          setExpertVariant(v);
+          if (activeSession) {
+            updateSessionMeta(activeSession.id, { variant: v });
+          }
+        }}
+        onOpenPwaShortcut={(persona) => setPwaPersona(persona)}
+        suggestedPersonaId={suggestedPersona}
+        onSelectPrompt={(prompt) => handleSendMessage(prompt)}
+        onSelectTopic={(topic) => createSession(currentPersonaId, 'concept', topic, topic, expertVariant)}
+      />
 
-            {/* Main Search Bar */}
-            <div className="w-full pt-2">
-              <SearchBar
-                onSearch={handleSearch}
-                selectedCategory={searchCategory}
-                onSelectCategory={handleSelectSearchCategory}
-                mode={mode}
-              />
-            </div>
+      {/* MODALS & OVERLAYS */}
+      <PaywallModal
+        isOpen={isPaywallOpen}
+        onClose={closePaywall}
+        queryUsage={usage}
+        onOpenLogin={() => {
+          closePaywall();
+          setIsLoginOpen(true);
+        }}
+      />
 
-            {/* Counseling Personas Suggestions below Search */}
-            <PersonaSuggestions
-              personas={personas}
-              mode={mode}
-              onSelectPersona={handleSelectPersona}
-              isLoading={isLoadingPersonas}
-            />
-          </div>
-        ) : (
-          /* ACTIVE TOPIC EXPLORER VIEW - Clean Layout with Entity Sidebar */
-          <div className="space-y-6">
-            {/* Topic Hero Banner */}
-            <TopicHero
-              topic={query}
-              onRefresh={refetch}
-              isLoading={isLoading}
-              onOpenCompare={() => setIsCompareOpen(true)}
-              onOpenTimeline={() => setIsTimelineOpen(true)}
-            />
+      <PwaShortcutModal
+        persona={pwaPersona}
+        isOpen={!!pwaPersona}
+        onClose={() => setPwaPersona(null)}
+      />
 
-            {/* Compact Search bar */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2">
-              <SearchBar
-                onSearch={handleSearch}
-                initialQuery={query}
-                placeholder={`Search another topic (e.g. Gravity, Quantum Computing)...`}
-                isCompact
-                selectedCategory={searchCategory}
-                onSelectCategory={handleSelectSearchCategory}
-                mode={mode}
-              />
-            </div>
-
-            {/* Category Tabs Bar */}
-            <CategoryTabs
-              activeCategory={activeCategory}
-              onSelectCategory={handleSelectCategory}
-              loadedCategories={loadedCategories}
-              currentTopic={query}
-              dataTrigger={data}
-            />
-
-            {/* Category Content + Entity Sidebar Layout */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-8 items-start">
-              
-              {/* Category Main Content */}
-              <div className="flex-1 min-w-0 w-full">
-                {activeCategory === "qa" ? (
-                  <Suspense fallback={
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-2xl p-8 text-center space-y-4 shadow-xs">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-                      <p className="text-xs text-slate-500">Loading AI Learning Q&A...</p>
-                    </div>
-                  }>
-                    <LearningQACard />
-                  </Suspense>
-                ) : activeCategory === "counseling" ? (
-                  <Suspense fallback={
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-2xl p-8 text-center space-y-4 shadow-xs">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-                      <p className="text-xs text-slate-500">Loading AI Expert Specialist...</p>
-                    </div>
-                  }>
-                    <CounselingCard
-                      defaultPersonaId={selectedPersonaId}
-                      onClearDefaultPersona={() => setSelectedPersonaId(undefined)}
-                      topic={query}
-                    />
-                  </Suspense>
-                ) : activeCategory === "notes" ? (
-                  <Suspense fallback={
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-2xl p-8 text-center space-y-4 shadow-xs">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-                      <p className="text-xs text-slate-500">Loading Student Notes...</p>
-                    </div>
-                  }>
-                    <NotesCard />
-                  </Suspense>
-                ) : (
-                  <CategoryViewer
-                    category={activeCategory}
-                    topic={query}
-                    data={data}
-                    isLoading={isLoading}
-                    isLoadingMore={isLoadingMore}
-                    error={error}
-                    isAutoRetrying={isAutoRetrying}
-                    retryCountdown={retryCountdown}
-                    autoRetryCount={autoRetryCount}
-                    hasMore={hasMore}
-                    entity={currentEntity}
-                    rankingScore={rankingScore}
-                    synonymsConnected={synonymsConnected}
-                    onLoadMore={loadMore}
-                    onRetry={refetch}
-                    onBookmarkItem={handleBookmarkItem}
-                    isBookmarkedItem={checkIsBookmarked}
-                    onSelectTopic={handleSearch}
-                    onOpenLogin={() => setIsLoginOpen(true)}
-                    matchMode={matchMode}
-                    onMatchModeChange={setMatchMode}
-                  />
-                )}
-              </div>
-
-              {/* Sidebar Insights Panel */}
-              <SidebarInsights
-                entity={currentEntity}
-                query={query}
-                matchedAlias={matchedAlias}
-                rankingScore={rankingScore}
-                synonymsConnected={synonymsConnected}
-                onSelectSynonym={handleSearch}
-              />
-
-            </div>
-          </div>
-        )}
-      </main>
-
-      {/* Authentication Modal */}
       <AuthModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
       />
 
-      {/* Modals wrapped in Suspense for Lazy Loading */}
+      <NotesSidePanel
+        isOpen={isNotesOpen}
+        onClose={() => setIsNotesOpen(false)}
+      />
+
       <Suspense fallback={null}>
-        {/* Bookmarks Modal Drawer */}
+        <KnowledgeGraphModal
+          isOpen={isKnowledgeGraphOpen}
+          onClose={() => setIsKnowledgeGraphOpen(false)}
+          initialTopic={activeSession?.title || 'Quantum Mechanics'}
+          onSelectTopic={(topic) => {
+            setIsKnowledgeGraphOpen(false);
+            createSession(currentPersonaId, 'concept', topic, topic, expertVariant);
+          }}
+        />
+
+        <CompiledNotesModal
+          isOpen={compiledNotesModalState.isOpen}
+          onClose={() => setCompiledNotesModalState({ isOpen: false, compiledText: '', subjectTags: [] })}
+          compiledText={compiledNotesModalState.compiledText}
+          subjectTags={compiledNotesModalState.subjectTags}
+        />
+
         <BookmarksModal
           isOpen={isBookmarksOpen}
           onClose={() => setIsBookmarksOpen(false)}
           bookmarks={bookmarks}
           onRemove={removeBookmark}
-          onSelectTopic={handleSearch}
+          onSelectTopic={(topic) => {
+            setIsBookmarksOpen(false);
+            createSession(currentPersonaId, 'concept', topic, topic, expertVariant);
+          }}
         />
 
-        {/* System Admin & Telemetry Modal */}
         <AdminDashboardModal
           isOpen={isAdminOpen}
           onClose={() => setIsAdminOpen(false)}
-          onRefreshEntityData={(slug) => fetchEntityData(slug)}
         />
 
-        {/* User Profile & Search History Modal */}
         <UserProfileModal
           isOpen={isProfileOpen}
           onClose={() => setIsProfileOpen(false)}
-          recentSearches={recentSearches}
-          onSelectSearch={handleSearch}
-          onClearHistory={clearRecentSearches}
+          recentSearches={sessions.map((s) => s.title).slice(0, 10)}
+          onSelectSearch={(topic) => {
+            setIsProfileOpen(false);
+            createSession(currentPersonaId, 'concept', topic, topic, expertVariant);
+          }}
+          onClearHistory={() => {}}
           bookmarksCount={bookmarks.length}
-          onOpenBookmarks={() => setIsBookmarksOpen(true)}
+          onOpenBookmarks={() => {
+            setIsProfileOpen(false);
+            setIsBookmarksOpen(true);
+          }}
         />
 
-        {/* Topic Comparison Matrix Modal */}
         <TopicCompareModal
           isOpen={isCompareOpen}
           onClose={() => setIsCompareOpen(false)}
-          defaultTopicA={query || "Gravity"}
-          onSelectTopic={handleSearch}
+          defaultTopicA={activeSession?.title || 'Quantum Mechanics'}
+          onSelectTopic={(topic) => {
+            setIsCompareOpen(false);
+            createSession(currentPersonaId, 'concept', topic, topic, expertVariant);
+          }}
         />
 
-        {/* Topic Chronological Timeline Modal */}
         <TopicTimelineModal
           isOpen={isTimelineOpen}
           onClose={() => setIsTimelineOpen(false)}
-          topic={query || "Gravity"}
+          topic={activeSession?.title || 'Quantum Mechanics'}
         />
 
-        {/* Developer REST API Documentation Modal */}
         <DeveloperApiModal
           isOpen={isApiDocsOpen}
           onClose={() => setIsApiDocsOpen(false)}
         />
       </Suspense>
-
-      {/* Footer */}
-      <Footer />
-
-      {/* Floating Notes Trigger Button */}
-      <button
-        onClick={() => setIsNotesOpen(true)}
-        className="fixed bottom-6 right-6 z-40 p-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center group"
-        title="Open My Notes"
-      >
-        <span className="text-xl">📝</span>
-        {notes.length > 0 && (
-          <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-50 dark:border-slate-950 animate-pulse">
-            {notes.length}
-          </span>
-        )}
-      </button>
-
-      {/* Notes Sidebar Drawer Panel */}
-      <NotesSidePanel
-        isOpen={isNotesOpen}
-        onClose={() => setIsNotesOpen(false)}
-      />
     </div>
   );
 }
-
