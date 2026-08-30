@@ -60,13 +60,19 @@ export function useQueryLimits() {
         const accountRemaining = isLoggedIn ? Math.max(0, ACCOUNT_DAILY_LIMIT - serverAccountCount) : deviceRemaining;
         const effectiveRemaining = Math.min(deviceRemaining, accountRemaining);
 
-        setUsage({
-          isLoggedIn,
-          tier: isLoggedIn ? 'free' : 'logged_out',
-          count: isLoggedIn ? serverAccountCount : serverDeviceCount,
-          limit: isLoggedIn ? ACCOUNT_DAILY_LIMIT : DEVICE_DAILY_LIMIT,
-          remaining: effectiveRemaining,
-          resetInSeconds: data.resetInSeconds || getUtcMidnightSeconds(),
+        setUsage(prev => {
+          const isStatusChange = prev.isLoggedIn !== isLoggedIn || prev.tier !== (isLoggedIn ? 'free' : 'logged_out');
+          const targetRemaining = isStatusChange ? effectiveRemaining : Math.min(prev.remaining, effectiveRemaining);
+          const targetCount = isStatusChange ? (isLoggedIn ? serverAccountCount : serverDeviceCount) : Math.max(prev.count, isLoggedIn ? serverAccountCount : serverDeviceCount);
+
+          return {
+            isLoggedIn,
+            tier: isLoggedIn ? 'free' : 'logged_out',
+            count: targetCount,
+            limit: isLoggedIn ? ACCOUNT_DAILY_LIMIT : DEVICE_DAILY_LIMIT,
+            remaining: targetRemaining,
+            resetInSeconds: data.resetInSeconds || getUtcMidnightSeconds(),
+          };
         });
         return;
       }
@@ -80,13 +86,18 @@ export function useQueryLimits() {
     const deviceRemaining = Math.max(0, DEVICE_DAILY_LIMIT - deviceCount);
 
     if (!isLoggedIn || !user) {
-      setUsage({
-        isLoggedIn: false,
-        tier: 'logged_out',
-        count: deviceCount,
-        limit: DEVICE_DAILY_LIMIT,
-        remaining: deviceRemaining,
-        resetInSeconds: getUtcMidnightSeconds(),
+      setUsage(prev => {
+        const isStatusChange = prev.isLoggedIn !== false || prev.tier !== 'logged_out';
+        const targetRemaining = isStatusChange ? deviceRemaining : Math.min(prev.remaining, deviceRemaining);
+        const targetCount = isStatusChange ? deviceCount : Math.max(prev.count, deviceCount);
+        return {
+          isLoggedIn: false,
+          tier: 'logged_out',
+          count: targetCount,
+          limit: DEVICE_DAILY_LIMIT,
+          remaining: targetRemaining,
+          resetInSeconds: getUtcMidnightSeconds(),
+        };
       });
       return;
     }
@@ -96,18 +107,38 @@ export function useQueryLimits() {
     const accountRemaining = Math.max(0, ACCOUNT_DAILY_LIMIT - userCount);
     const effectiveRemaining = Math.min(deviceRemaining, accountRemaining);
 
-    setUsage({
-      isLoggedIn: true,
-      tier: 'free',
-      count: userCount,
-      limit: ACCOUNT_DAILY_LIMIT,
-      remaining: effectiveRemaining,
-      resetInSeconds: getUtcMidnightSeconds(),
+    setUsage(prev => {
+      const isStatusChange = prev.isLoggedIn !== true || prev.tier !== 'free';
+      const targetRemaining = isStatusChange ? effectiveRemaining : Math.min(prev.remaining, effectiveRemaining);
+      const targetCount = isStatusChange ? userCount : Math.max(prev.count, userCount);
+      return {
+        isLoggedIn: true,
+        tier: 'free',
+        count: targetCount,
+        limit: ACCOUNT_DAILY_LIMIT,
+        remaining: targetRemaining,
+        resetInSeconds: getUtcMidnightSeconds(),
+      };
     });
-  }, [isLoggedIn, user]);
+  }, [isLoggedIn, user?.id, user?.tier]);
 
   useEffect(() => {
     syncUsage();
+
+    const interval = setInterval(() => {
+      syncUsage();
+    }, 60000);
+
+    const handleFocus = () => {
+      syncUsage();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [syncUsage]);
 
   const canExecuteQuery = useCallback((): boolean => {
@@ -115,6 +146,16 @@ export function useQueryLimits() {
     return usage.remaining > 0;
   }, [user?.tier, usage.remaining]);
 
+  /**
+   * CONFIRMED FLOW (Bug 1 Fix Trace):
+   * 1. Query Execution: recordQueryExecution() is invoked before/during message dispatch.
+   * 2. Synchronous Local Decrement: setUsage immediately decrements local remaining by 1 and increments count by 1.
+   * 3. Local Storage Cache: Synchronously persists updated counts into localStorage for device & user keys.
+   * 4. Decoupled Network Sync: Immediate syncUsage() network call is removed from this execution path.
+   * 5. Safe Monotonic Sync: When syncUsage() runs periodically or on window focus, it applies a monotonic
+   *    merge rule (remaining = min(localRemaining, serverRemaining)), preventing stale server responses
+   *    from ever overwriting or incrementing the local remaining count mid-session.
+   */
   const recordQueryExecution = useCallback((): boolean => {
     if (user?.tier === 'paid') return true;
 
@@ -148,9 +189,8 @@ export function useQueryLimits() {
       localStorage.setItem(userKey, String(userCount));
     }
 
-    syncUsage();
     return true;
-  }, [canExecuteQuery, isLoggedIn, user, syncUsage]);
+  }, [canExecuteQuery, isLoggedIn, user]);
 
   const triggerPaywall = useCallback(() => {
     setIsPaywallOpen(true);

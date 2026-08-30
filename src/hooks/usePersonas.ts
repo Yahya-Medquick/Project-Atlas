@@ -42,7 +42,7 @@ export function usePersonas() {
       clearInterval(interval);
       window.removeEventListener('personas-updated', handleUpdated);
     };
-  }, [loadPersonas]);
+  }, []);
 
   const { globalExperts, pkExperts } = useMemo(() => {
     if (!isLoadedFromApi || rawPersonas.length === 0) {

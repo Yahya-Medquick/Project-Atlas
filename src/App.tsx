@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, lazy, Suspense, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense, useCallback, useRef } from 'react';
+import { Check } from 'lucide-react';
 import { useTheme } from './hooks/useTheme';
 import { useBookmarks } from './hooks/useBookmarks';
 import { useNotes } from './hooks/useNotes';
@@ -100,6 +101,8 @@ export default function App() {
   const [isTimelineOpen, setIsTimelineOpen] = useState<boolean>(false);
   const [isApiDocsOpen, setIsApiDocsOpen] = useState<boolean>(false);
   const [isNotesOpen, setIsNotesOpen] = useState<boolean>(false);
+  const [savedNotesCount, setSavedNotesCount] = useState<number>(0);
+  const [saveNoteToast, setSaveNoteToast] = useState<boolean>(false);
   const [isKnowledgeGraphOpen, setIsKnowledgeGraphOpen] = useState<boolean>(false);
   const [compiledNotesModalState, setCompiledNotesModalState] = useState<{
     isOpen: boolean;
@@ -122,12 +125,46 @@ export default function App() {
     return match?.id;
   }, [activeSession?.title, activeExpertSet]);
 
+  const hasInitializedRef = useRef(false);
+
   // Initial bootstrap: create initial session if none exists or parse URL params
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     const urlParams = new URLSearchParams(window.location.search);
     const urlSession = urlParams.get('session');
     const urlPersona = urlParams.get('persona');
     const urlMode = (urlParams.get('mode') || 'concept') as ChatMode;
+
+    if (urlPersona) {
+      const allExperts = { ...globalExperts, ...pkExperts };
+      const matched =
+        allExperts[urlPersona] ||
+        Object.values(allExperts).find((p) => p.slug === urlPersona || p.id === urlPersona);
+
+      if (matched) {
+        const isPk = !!pkExperts[matched.id] || matched.variant === 'pk';
+        if (isPk) {
+          setExpertVariant('pk');
+        }
+
+        const existingSession = sessions.find((s) => s.personaId === matched.id);
+        if (existingSession) {
+          selectSession(existingSession.id);
+          return;
+        }
+
+        createSession(
+          matched.id,
+          urlMode,
+          `${matched.name} Session`,
+          `${matched.name} Session`,
+          isPk ? 'pk' : 'global'
+        );
+        return;
+      }
+    }
 
     if (urlSession && sessions.some((s) => s.id === urlSession)) {
       selectSession(urlSession);
@@ -140,7 +177,18 @@ export default function App() {
     } else if (!activeSessionId) {
       selectSession(sessions[0].id);
     }
-  }, [sessions, activeSessionId, createSession, selectSession, expertVariant]);
+  }, []);
+
+  // Synchronize active persona with browser URL query parameter for PWA shortcut capture
+  useEffect(() => {
+    if (activePersona) {
+      const personaKey = activePersona.slug || activePersona.id;
+      const currentUrl = new URL(window.location.href);
+      if (currentUrl.searchParams.get('persona') !== personaKey) {
+        history.replaceState(null, '', `/?persona=${personaKey}`);
+      }
+    }
+  }, [activePersona?.id, activePersona?.slug]);
 
   // Handle window resize to auto-adapt sidebars
   useEffect(() => {
@@ -156,6 +204,14 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Create new chat
+  const handleNewChat = useCallback(() => {
+    createSession('aris', 'concept', 'Explore Topic', 'New Chat', expertVariant);
+    if (window.innerWidth < 1024) {
+      setIsLeftPanelOpen(false);
+    }
+  }, [createSession, expertVariant]);
+
   // Keyboard shortcut: Ctrl+K or Cmd+K for New Chat
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -166,15 +222,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [createSession, expertVariant]);
-
-  // Create new chat
-  const handleNewChat = useCallback(() => {
-    const newSession = createSession('aris', 'concept', 'Explore Topic', 'New Chat', expertVariant);
-    if (window.innerWidth < 1024) {
-      setIsLeftPanelOpen(false);
-    }
-  }, [createSession, expertVariant]);
+  }, [handleNewChat]);
 
   // Switch persona in ongoing chat session
   const handleSelectPersona = useCallback(
@@ -280,12 +328,22 @@ export default function App() {
     }
   };
 
-  // Save to Notes callback
+  // Auto-dismiss save note toast notification after 2 seconds
+  useEffect(() => {
+    if (!saveNoteToast) return;
+    const timer = setTimeout(() => {
+      setSaveNoteToast(false);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [saveNoteToast]);
+
+  // Save to Notes callback (silent save with badge count increment and toast notification)
   const handleSaveToNotes = (content: string, title?: string) => {
     const noteTitle = title || `${activePersona.name} Note`;
     const subject = activeSession?.mode || 'General';
     addNote(noteTitle, content, subject);
-    setIsNotesOpen(true);
+    setSavedNotesCount((prev) => prev + 1);
+    setSaveNoteToast(true);
   };
 
   // Save to Bookmarks callback
@@ -317,8 +375,11 @@ export default function App() {
         onPinSession={togglePinSession}
         onOpenBookmarks={() => setIsBookmarksOpen(true)}
         bookmarksCount={bookmarks.length}
-        onOpenNotes={() => setIsNotesOpen(true)}
-        notesCount={notes.length}
+        onOpenNotes={() => {
+          setIsNotesOpen(true);
+          setSavedNotesCount(0);
+        }}
+        notesCount={savedNotesCount}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenApiDocs={() => setIsApiDocsOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
@@ -465,6 +526,20 @@ export default function App() {
           onClose={() => setIsApiDocsOpen(false)}
         />
       </Suspense>
+
+      {/* Subtle Save Note Toast Notification */}
+      {saveNoteToast && (
+        <div
+          id="save-note-toast"
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900/90 dark:bg-slate-800/95 text-white text-xs font-semibold shadow-xl border border-slate-700/60 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-none"
+        >
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <Check className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Note saved</span>
+        </div>
+      )}
     </div>
   );
 }

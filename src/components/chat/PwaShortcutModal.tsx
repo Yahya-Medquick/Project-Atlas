@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Smartphone,
@@ -25,9 +25,24 @@ export const PwaShortcutModal: React.FC<PwaShortcutModalProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
 
+  // Set persona URL on open before showing install instructions
+  useEffect(() => {
+    if (isOpen && persona) {
+      const personaKey = persona.slug || persona.id;
+      history.replaceState(null, '', `/?persona=${personaKey}`);
+    }
+  }, [isOpen, persona]);
+
+  const handleClose = () => {
+    // Restore original URL when closing modal
+    history.replaceState(null, '', '/');
+    onClose();
+  };
+
   if (!isOpen || !persona) return null;
 
-  const directUrl = `${window.location.origin}/?persona=${persona.id}&mode=concept`;
+  const personaKey = persona.slug || persona.id;
+  const directUrl = `${window.location.origin}/?persona=${personaKey}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(directUrl);
@@ -36,8 +51,14 @@ export const PwaShortcutModal: React.FC<PwaShortcutModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">
+    <div
+      onClick={handleClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col"
+      >
         {/* Header */}
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -58,7 +79,7 @@ export const PwaShortcutModal: React.FC<PwaShortcutModalProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -67,6 +88,17 @@ export const PwaShortcutModal: React.FC<PwaShortcutModalProps> = ({
 
         {/* Body */}
         <div className="p-5 space-y-4 text-xs text-slate-700 dark:text-slate-300">
+          {/* Active URL Status Banner */}
+          <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 text-indigo-950 dark:text-indigo-200 space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-[11px]">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span>Install now while on this URL</span>
+            </div>
+            <p className="text-[10px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
+              The active browser URL is currently configured for <strong>{persona.name}</strong>. Triggering <strong>Install</strong> or <strong>Add to Home Screen</strong> right now saves this specific expert directly to your device.
+            </p>
+          </div>
+
           {/* Direct URL Box */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -119,8 +151,8 @@ export const PwaShortcutModal: React.FC<PwaShortcutModalProps> = ({
         {/* Footer */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-end">
           <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-xs hover:opacity-90 transition-opacity"
+            onClick={handleClose}
+            className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-xs hover:opacity-90 transition-opacity cursor-pointer"
           >
             Done
           </button>

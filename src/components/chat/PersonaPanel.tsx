@@ -409,16 +409,19 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
                 : 'Need personalized research advice or study roadmaps? Connect directly with academic mentors on WhatsApp.'}
             </p>
 
-            <a
-              href={`https://wa.me/${import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER}?text=Hello%20Bifrost%20Academic%20Counselor%2C%20I%20need%20assistance%20with%20my%20studies`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => {
+                const phone = import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER;
+                const message = encodeURIComponent('Hi, I am using Bifrost. I want to: [Support / Request a Persona / Institute Registration]');
+                const url = `https://wa.me/${phone}?text=${message}`;
+                window.open(url, '_blank');
+              }}
               className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-xs group cursor-pointer"
             >
               <MessageCircle className="w-3.5 h-3.5" />
               <span>Chat on WhatsApp</span>
               <ExternalLink className="w-3 h-3 opacity-70 group-hover:translate-x-0.5 transition-transform" />
-            </a>
+            </button>
 
             <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-emerald-500/10">
               <span className="flex items-center gap-1">

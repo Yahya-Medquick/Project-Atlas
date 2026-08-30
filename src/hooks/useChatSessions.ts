@@ -143,12 +143,19 @@ export function useChatSessions() {
         },
       };
 
-      const updated = [newSession, ...sessions];
-      persistSessions(updated);
+      setSessions((prev) => {
+        const updated = [newSession, ...prev];
+        try {
+          localStorage.setItem(`${SESSIONS_STORAGE_KEY}_${storageUserPrefix}`, JSON.stringify(updated));
+        } catch (e) {
+          console.error('Failed to persist sessions:', e);
+        }
+        return updated;
+      });
       selectSession(sessionId);
       return newSession;
     },
-    [sessions, persistSessions, selectSession]
+    [selectSession, storageUserPrefix]
   );
 
   // Update session messages
