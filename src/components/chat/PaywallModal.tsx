@@ -24,7 +24,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
   if (!isOpen) return null;
 
   const handleGetUnlimitedAccess = () => {
-    const phone = import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER;
+    const phone = "923264397102";
     const currentUsername = user?.username || profile?.username || user?.name || profile?.name || 'Guest';
     const message = encodeURIComponent(`Hi, I want unlimited access to Bifrost. My username is: ${currentUsername}`);
     const url = `https://wa.me/${phone}?text=${message}`;
