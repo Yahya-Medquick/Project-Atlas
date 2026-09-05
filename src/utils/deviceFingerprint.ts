@@ -1,7 +1,8 @@
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
-const STORAGE_KEY = 'bifrost_device_id';
-const DB_NAME = 'bifrost_device_db';
+const STORAGE_KEY = 'gage_device_id';
+const LEGACY_STORAGE_KEY = 'bifrost_device_id';
+const DB_NAME = 'gage_device_db';
 const STORE_NAME = 'device_store';
 
 function openDb(): Promise<IDBDatabase> {
@@ -57,7 +58,7 @@ let cachedDeviceId: string | null = null;
 export async function initPersistentDeviceId(): Promise<string> {
   if (cachedDeviceId) return cachedDeviceId;
 
-  let localId = localStorage.getItem(STORAGE_KEY);
+  let localId = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
   let idbId = await getStoredIdFromIndexedDB();
 
   let finalId = localId || idbId;
@@ -88,9 +89,10 @@ export async function initPersistentDeviceId(): Promise<string> {
 export function getOrCreateDeviceId(): string {
   if (cachedDeviceId) return cachedDeviceId;
 
-  const localId = localStorage.getItem(STORAGE_KEY);
+  const localId = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
   if (localId) {
     cachedDeviceId = localId;
+    localStorage.setItem(STORAGE_KEY, localId);
     getStoredIdFromIndexedDB().then((idbId) => {
       if (!idbId) setStoredIdInIndexedDB(localId);
     }).catch(() => {});

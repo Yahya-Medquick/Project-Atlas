@@ -4,6 +4,7 @@ import { QueryUsageState } from '../types/chat';
 import { getOrCreateDeviceId } from '../utils/deviceFingerprint';
 import { getAuthHeaders } from '../services/api';
 
+const GUEST_LIFETIME_LIMIT = 5;
 const DEVICE_DAILY_LIMIT = 15;
 const ACCOUNT_DAILY_LIMIT = 10;
 
@@ -22,21 +23,25 @@ export function useQueryLimits() {
   const { user, isLoggedIn } = useUser();
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [usage, setUsage] = useState<QueryUsageState>(() => {
+    const deviceId = typeof window !== 'undefined' ? (localStorage.getItem('bifrost_device_id') || 'dev-unknown') : 'dev-unknown';
+    const guestCount = typeof window !== 'undefined' ? (parseInt(localStorage.getItem(`bifrost_guest_lifetime_${deviceId}`) || '0', 10) || 0) : 0;
+    const remaining = Math.max(0, GUEST_LIFETIME_LIMIT - guestCount);
     return {
       isLoggedIn: false,
       tier: 'logged_out',
-      count: 0,
-      limit: DEVICE_DAILY_LIMIT,
-      remaining: DEVICE_DAILY_LIMIT,
-      resetInSeconds: getUtcMidnightSeconds(),
+      count: guestCount,
+      limit: GUEST_LIFETIME_LIMIT,
+      remaining,
+      resetInSeconds: 0,
     };
   });
 
   const syncUsage = useCallback(async () => {
     const today = getUtcTodayDate();
     const deviceId = getOrCreateDeviceId();
+    const isPaid = user?.tier === 'paid' || user?.tier === 'pro' || user?.tier === 'unlimited';
 
-    if (user?.tier === 'paid') {
+    if (isPaid) {
       setUsage({
         isLoggedIn: true,
         tier: 'paid',
@@ -54,22 +59,43 @@ export function useQueryLimits() {
       });
       if (res.ok) {
         const data = await res.json();
+
+        if (!isLoggedIn) {
+          const guestCount = data.guestLifetimeCount ?? data.count ?? 0;
+          const guestRemaining = Math.max(0, GUEST_LIFETIME_LIMIT - guestCount);
+          localStorage.setItem(`bifrost_guest_lifetime_${deviceId}`, String(guestCount));
+
+          setUsage({
+            isLoggedIn: false,
+            tier: 'logged_out',
+            count: guestCount,
+            limit: GUEST_LIFETIME_LIMIT,
+            remaining: guestRemaining,
+            resetInSeconds: 0,
+          });
+
+          if (guestRemaining <= 0) {
+            setIsPaywallOpen(true);
+          }
+          return;
+        }
+
         const serverDeviceCount = data.deviceCount ?? 0;
         const serverAccountCount = data.accountCount ?? 0;
         const deviceRemaining = Math.max(0, DEVICE_DAILY_LIMIT - serverDeviceCount);
-        const accountRemaining = isLoggedIn ? Math.max(0, ACCOUNT_DAILY_LIMIT - serverAccountCount) : deviceRemaining;
+        const accountRemaining = Math.max(0, ACCOUNT_DAILY_LIMIT - serverAccountCount);
         const effectiveRemaining = Math.min(deviceRemaining, accountRemaining);
 
         setUsage(prev => {
-          const isStatusChange = prev.isLoggedIn !== isLoggedIn || prev.tier !== (isLoggedIn ? 'free' : 'logged_out');
+          const isStatusChange = prev.isLoggedIn !== isLoggedIn || prev.tier !== 'free';
           const targetRemaining = isStatusChange ? effectiveRemaining : Math.min(prev.remaining, effectiveRemaining);
-          const targetCount = isStatusChange ? (isLoggedIn ? serverAccountCount : serverDeviceCount) : Math.max(prev.count, isLoggedIn ? serverAccountCount : serverDeviceCount);
+          const targetCount = isStatusChange ? serverAccountCount : Math.max(prev.count, serverAccountCount);
 
           return {
-            isLoggedIn,
-            tier: isLoggedIn ? 'free' : 'logged_out',
+            isLoggedIn: true,
+            tier: 'free',
             count: targetCount,
-            limit: isLoggedIn ? ACCOUNT_DAILY_LIMIT : DEVICE_DAILY_LIMIT,
+            limit: ACCOUNT_DAILY_LIMIT,
             remaining: targetRemaining,
             resetInSeconds: data.resetInSeconds || getUtcMidnightSeconds(),
           };
@@ -81,26 +107,29 @@ export function useQueryLimits() {
     }
 
     // Local fallback if offline or server check unavailable
+    if (!isLoggedIn || !user) {
+      const guestKey = `bifrost_guest_lifetime_${deviceId}`;
+      const guestCount = parseInt(localStorage.getItem(guestKey) || '0', 10);
+      const guestRemaining = Math.max(0, GUEST_LIFETIME_LIMIT - guestCount);
+
+      setUsage({
+        isLoggedIn: false,
+        tier: 'logged_out',
+        count: guestCount,
+        limit: GUEST_LIFETIME_LIMIT,
+        remaining: guestRemaining,
+        resetInSeconds: 0,
+      });
+
+      if (guestRemaining <= 0) {
+        setIsPaywallOpen(true);
+      }
+      return;
+    }
+
     const deviceKey = `bifrost_device_usage_${deviceId}_${today}`;
     const deviceCount = parseInt(localStorage.getItem(deviceKey) || '0', 10);
     const deviceRemaining = Math.max(0, DEVICE_DAILY_LIMIT - deviceCount);
-
-    if (!isLoggedIn || !user) {
-      setUsage(prev => {
-        const isStatusChange = prev.isLoggedIn !== false || prev.tier !== 'logged_out';
-        const targetRemaining = isStatusChange ? deviceRemaining : Math.min(prev.remaining, deviceRemaining);
-        const targetCount = isStatusChange ? deviceCount : Math.max(prev.count, deviceCount);
-        return {
-          isLoggedIn: false,
-          tier: 'logged_out',
-          count: targetCount,
-          limit: DEVICE_DAILY_LIMIT,
-          remaining: targetRemaining,
-          resetInSeconds: getUtcMidnightSeconds(),
-        };
-      });
-      return;
-    }
 
     const userKey = `bifrost_user_usage_${user.id}_${today}`;
     const userCount = parseInt(localStorage.getItem(userKey) || '0', 10);
@@ -142,32 +171,40 @@ export function useQueryLimits() {
   }, [syncUsage]);
 
   const canExecuteQuery = useCallback((): boolean => {
-    if (user?.tier === 'paid') return true;
+    if (user?.tier === 'paid' || user?.tier === 'pro' || user?.tier === 'unlimited') return true;
     return usage.remaining > 0;
   }, [user?.tier, usage.remaining]);
 
   /**
-   * CONFIRMED FLOW (Bug 1 Fix Trace):
+   * CONFIRMED FLOW (Bug 1 & 2 Fix Trace):
    * 1. Query Execution: recordQueryExecution() is invoked before/during message dispatch.
-   * 2. Synchronous Local Decrement: setUsage immediately decrements local remaining by 1 and increments count by 1.
-   * 3. Local Storage Cache: Synchronously persists updated counts into localStorage for device & user keys.
-   * 4. Decoupled Network Sync: Immediate syncUsage() network call is removed from this execution path.
-   * 5. Safe Monotonic Sync: When syncUsage() runs periodically or on window focus, it applies a monotonic
-   *    merge rule (remaining = min(localRemaining, serverRemaining)), preventing stale server responses
-   *    from ever overwriting or incrementing the local remaining count mid-session.
+   * 2. Synchronous Local Decrement: setUsage immediately decrements local remaining by 1.
+   * 3. Guest Lifetime: Guest count is tracked against permanent GUEST_LIFETIME_LIMIT (5).
+   * 4. Real-time PostgreSQL device_limits & guest_device_limits write-through via /api/query/track.
    */
   const recordQueryExecution = useCallback((): boolean => {
-    if (user?.tier === 'paid') return true;
+    if (user?.tier === 'paid' || user?.tier === 'pro' || user?.tier === 'unlimited') return true;
 
     if (!canExecuteQuery()) {
       setIsPaywallOpen(true);
       return false;
     }
 
+    const deviceId = getOrCreateDeviceId();
+    const today = getUtcTodayDate();
+
+    // Guest lifetime increment
+    let nextGuestCount = 0;
+    if (!isLoggedIn) {
+      const guestKey = `bifrost_guest_lifetime_${deviceId}`;
+      nextGuestCount = (parseInt(localStorage.getItem(guestKey) || '0', 10) || 0) + 1;
+      localStorage.setItem(guestKey, String(nextGuestCount));
+    }
+
     // Synchronous immediate decrement for real-time UI responsiveness
     setUsage(prev => {
       const nextRemaining = Math.max(0, prev.remaining - 1);
-      const nextCount = prev.count + 1;
+      const nextCount = !isLoggedIn ? nextGuestCount : prev.count + 1;
       return {
         ...prev,
         count: nextCount,
@@ -175,10 +212,60 @@ export function useQueryLimits() {
       };
     });
 
-    const today = getUtcTodayDate();
-    const deviceId = getOrCreateDeviceId();
+    if (!isLoggedIn && nextGuestCount >= GUEST_LIFETIME_LIMIT) {
+      setIsPaywallOpen(true);
+    }
 
-    // Increment local device usage cache
+    // Write-through to backend PostgreSQL device_limits immediately
+    fetch('/api/query/track', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ deviceId }),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+
+          if (!isLoggedIn) {
+            const serverGuestCount = data.guestLifetimeCount ?? data.count ?? nextGuestCount;
+            const guestRemaining = Math.max(0, GUEST_LIFETIME_LIMIT - serverGuestCount);
+            setUsage(prev => ({
+              ...prev,
+              count: serverGuestCount,
+              limit: GUEST_LIFETIME_LIMIT,
+              remaining: guestRemaining,
+            }));
+            if (guestRemaining <= 0) {
+              setIsPaywallOpen(true);
+            }
+            return;
+          }
+
+          const serverDevCount = data.deviceCount ?? 0;
+          const serverAccCount = data.accountCount ?? 0;
+          const devRemaining = Math.max(0, DEVICE_DAILY_LIMIT - serverDevCount);
+          const accRemaining = Math.max(0, ACCOUNT_DAILY_LIMIT - serverAccCount);
+          const effRemaining = Math.min(devRemaining, accRemaining);
+
+          setUsage(prev => ({
+            ...prev,
+            count: serverAccCount,
+            remaining: effRemaining,
+          }));
+
+          if (effRemaining <= 0) {
+            setIsPaywallOpen(true);
+          }
+        }
+      })
+      .catch((e) => {
+        console.warn('Backend query tracking request failed:', e);
+      });
+
+    // Local storage display cache only
     const deviceKey = `bifrost_device_usage_${deviceId}_${today}`;
     const devCount = (parseInt(localStorage.getItem(deviceKey) || '0', 10) || 0) + 1;
     localStorage.setItem(deviceKey, String(devCount));

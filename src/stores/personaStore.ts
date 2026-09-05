@@ -17,8 +17,14 @@ export async function fetchPersonas(variant?: string, forceRefresh: boolean = fa
   if (!forceRefresh && _cache && now - _cacheTime < CACHE_TTL) return _cache;
 
   try {
-    const url = variant ? `${BASE_URL}?variant=${variant}` : `${BASE_URL}`;
-    const res = await fetch(url);
+    let url = variant ? `${BASE_URL}?variant=${variant}` : `${BASE_URL}`;
+    if (forceRefresh) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}_t=${now}`;
+    }
+    const res = await fetch(url, {
+      cache: forceRefresh ? 'no-cache' : 'default',
+    });
     const data = await res.json();
     if (!data.success) {
       throw new Error(data.error || "Failed to fetch personas");

@@ -78,6 +78,7 @@ async function initDatabaseSchema() {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS tier VARCHAR(50) DEFAULT 'free';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS trusted_devices TEXT[] DEFAULT '{}';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_mode VARCHAR(20) DEFAULT 'research';
@@ -128,20 +129,6 @@ async function initDatabaseSchema() {
         is_starred BOOLEAN DEFAULT FALSE,
         display_order INT DEFAULT 0,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 4. User bookmarks
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS user_bookmarks (
-        bookmark_id VARCHAR(255) PRIMARY KEY,
-        user_id TEXT,
-        topic_slug VARCHAR(255),
-        category VARCHAR(50),
-        title VARCHAR(255),
-        url TEXT,
-        description TEXT,
-        saved_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
@@ -350,9 +337,14 @@ async function initDatabaseSchema() {
         is_active     BOOLEAN DEFAULT true,
         is_default    BOOLEAN DEFAULT false,
         display_order INTEGER DEFAULT 0,
+        variant       VARCHAR(16) DEFAULT 'global',
         created_at    TIMESTAMPTZ DEFAULT now(),
         updated_at    TIMESTAMPTZ DEFAULT now()
       );
+    `);
+
+    await dbPool.query(`
+      ALTER TABLE expert_personas ADD COLUMN IF NOT EXISTS variant VARCHAR(16) DEFAULT 'global';
     `);
 
     await dbPool.query(`
@@ -365,13 +357,22 @@ async function initDatabaseSchema() {
     // 18. Device Query Limits Table
     await dbPool.query(`
       CREATE TABLE IF NOT EXISTS device_limits (
-        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         device_id     VARCHAR(255) NOT NULL,
         usage_date    DATE NOT NULL DEFAULT CURRENT_DATE,
-        query_count   INT NOT NULL DEFAULT 0,
-        created_at    TIMESTAMPTZ DEFAULT NOW(),
-        updated_at    TIMESTAMPTZ DEFAULT NOW(),
-        CONSTRAINT unique_device_usage_date UNIQUE(device_id, usage_date)
+        query_count   INTEGER NOT NULL DEFAULT 0,
+        is_guest      BOOLEAN DEFAULT true,
+        PRIMARY KEY (device_id, usage_date)
+      );
+      ALTER TABLE device_limits ADD COLUMN IF NOT EXISTS is_guest BOOLEAN DEFAULT true;
+    `);
+
+    // 19. Guest Device Lifetime Query Limits Table (Permanent 5 queries)
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS guest_device_limits (
+        device_id VARCHAR(255) PRIMARY KEY,
+        total_queries INTEGER NOT NULL DEFAULT 0,
+        first_seen TIMESTAMPTZ DEFAULT NOW(),
+        last_seen TIMESTAMPTZ DEFAULT NOW()
       );
     `);
 
@@ -423,10 +424,9 @@ if (dbPool) {
 }
 
 // Session secret
-const SESSION_SECRET = process.env.SESSION_SECRET || "bifrost_ai_engine_secret_session_key_2026";
+const SESSION_SECRET = process.env.SESSION_SECRET || "gage_ai_engine_secret_session_key_2026";
 
 // In-memory fallback structures for development
-let inMemoryBookmarks: any[] = [];
 const inMemoryUsers = new Map<string, any>();
 const inMemoryTabUsage = new Map<string, { count: number; date: string }>();
 const inMemoryHistory = new Map<string, any[]>();
@@ -480,6 +480,35 @@ let inMemoryPersonas: any[] = [
   }
 ];
 let inMemoryExpertPersonas: any[] = [
+  {
+    id: "ep-hamza-000",
+    slug: "hamza",
+    name: "Hamza Tariq",
+    initials: "HT",
+    role: "Conversational Mentor & Academic Companion",
+    affiliation: "Bilingual Knowledge Mentor & Concept Guide",
+    badge: "General & Bilingual",
+    avatar_color: "#00a884",
+    specialties: ["Bilingual (English & Hinglish / Roman Urdu)", "Crisp conversational answers", "Concept breakdowns & intuition", "Academic study guidance", "Direct problem solving"],
+    domains: ["general", "chat", "conversation", "help", "study", "basics", "hinglish", "urdu", "roman urdu", "english", "questions", "advice", "concepts", "notes", "quiz", "homework", "tips"],
+    description: "Lightweight conversational companion and academic mentor. Communicates naturally in English and Hinglish (Roman Urdu) without fluff or unsolicited introductions.",
+    personality: "friendly, conversational, direct, bilingual, zero-fluff, helpful",
+    opener_template: "Hey! How can I help you today? Koi bhi topic ya question ho, English ya Roman Urdu/Hinglish mein pooch sakte hain.",
+    system_prompt: `You are Hamza Tariq, a helpful, sharp, and friendly conversational academic mentor and companion.
+STRICT BEHAVIOR RULES:
+1. NO UNPROMPTED INTRODUCTIONS: DO NOT introduce yourself or announce your name, role, or background (e.g. NEVER say "Hi, I am Hamza", "Hello! I am Hamza Tariq...", or "As your AI companion...") unless the user explicitly asks who you are or what your name is. Jump directly to addressing the user's prompt or question.
+2. BILINGUAL & HINGLISH/ROMAN URDU FLUENCY: Automatically adapt to the language and tone of the user's message.
+   - If the user writes in Roman Urdu / Hinglish (e.g. "kya haal hai", "bhai yeh samjha do", "exam ki tayari kaise karun", "mujhe yeh topic samajh nahi aa raha", "kuch tips do"), reply naturally in clean, friendly Roman Urdu / Hinglish.
+   - If the user writes in English, reply in clear, natural English.
+   - If the user mixes English and Urdu/Hindi, seamlessly converse in bilingual style.
+3. CONVERSATIONAL & LIGHTWEIGHT: Keep your responses crisp, conversational, clear, and direct. Avoid unnecessary fluff, robotic pleasantries, or massive boilerplate text. Give easy-to-digest explanations with clean formatting.
+4. VERSATILITY: Help with study concepts, everyday questions, problem solving, exam tips, or casual discussions with equal ease.`,
+    is_active: true,
+    is_default: true,
+    display_order: 0,
+    created_at: new Date("2026-08-16T11:59:00Z"),
+    updated_at: new Date("2026-08-16T11:59:00Z"),
+  },
   {
     id: "ep-aris-001",
     slug: "aris",
@@ -1493,7 +1522,7 @@ const inMemoryApiKeyUsage = new Map<string, { count: number; date: string }>();
 
 function generateRawApiKey(): string {
   const bytes = crypto.randomBytes(20).toString("hex");
-  return `bifrost_live_${bytes}`;
+  return `gage_live_${bytes}`;
 }
 
 function hashApiKey(rawKey: string): string {
@@ -1511,7 +1540,7 @@ async function verifyApiKeyMiddleware(req: Request, res: Response, next: NextFun
 
   if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
     rawKey = authHeader.slice(7).trim();
-  } else if (typeof authHeader === "string" && authHeader.startsWith("bifrost_live_")) {
+  } else if (typeof authHeader === "string" && (authHeader.startsWith("gage_live_") || authHeader.startsWith("bifrost_live_"))) {
     rawKey = authHeader.trim();
   } else if (req.headers["x-api-key"]) {
     rawKey = (req.headers["x-api-key"] as string).trim();
@@ -1519,10 +1548,10 @@ async function verifyApiKeyMiddleware(req: Request, res: Response, next: NextFun
     rawKey = (req.query.api_key as string).trim();
   }
 
-  if (!rawKey || !rawKey.startsWith("bifrost_live_")) {
+  if (!rawKey || (!rawKey.startsWith("gage_live_") && !rawKey.startsWith("bifrost_live_"))) {
     return res.status(401).json({
       error: "UNAUTHORIZED",
-      message: "Missing or invalid API key. Header format required: 'Authorization: Bearer bifrost_live_<key>' or 'X-API-Key: bifrost_live_<key>'.",
+      message: "Missing or invalid API key. Header format required: 'Authorization: Bearer gage_live_<key>' or 'X-API-Key: gage_live_<key>'.",
       docs: "/api/v1/docs",
     });
   }
@@ -1664,7 +1693,7 @@ app.use("/api/v1", verifyApiKeyMiddleware);
 app.get("/api/health", (_req: Request, res: Response) => {
   res.json({
     status: "ok",
-    app: "Bifrost AI Engine",
+    app: "G-AGE AI Engine",
     version: "2.5.0",
     timestamp: new Date().toISOString(),
     database: {
@@ -1688,7 +1717,7 @@ app.get(["/api/ready", "/api/v1/ready"], (_req: Request, res: Response) => {
 app.get("/api/v1/health", (_req: Request, res: Response) => {
   res.json({
     status: "healthy",
-    engine: "Bifrost AI Engine v2.5",
+    engine: "G-AGE AI Engine v2.5",
     uptimeSeconds: process.uptime(),
     memoryUsageMb: Math.round((process.memoryUsage().heapUsed / 1024 / 1024) * 10) / 10,
     activeEntities: entityRegistry.size,
@@ -1707,7 +1736,7 @@ app.get("/api/v1/metrics", (_req: Request, res: Response) => {
   const hitRatio = cacheHits + cacheMisses > 0 ? ((cacheHits / (cacheHits + cacheMisses)) * 100).toFixed(1) + "%" : "0%";
 
   res.json({
-    app: "Bifrost AI Engine",
+    app: "G-AGE AI Engine",
     timestamp: new Date().toISOString(),
     process: {
       uptimeSeconds: process.uptime(),
@@ -2033,12 +2062,14 @@ app.post("/api/auth/request-otp", async (req: Request, res: Response) => {
 app.post("/api/auth/register", async (req: Request, res: Response) => {
   try {
     const { username, password, phone, deviceId } = req.body || {};
-    if (!username || !password || !phone) {
-      return res.status(400).json({ error: "Username, password, and phone number are required." });
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password are required." });
     }
 
     const cleanUsername = sanitizeInput(username).trim();
-    const cleanPhone = normalizePhoneNumber(phone);
+    const cleanPhone = (phone && typeof phone === "string" && phone.trim())
+      ? normalizePhoneNumber(phone.trim())
+      : null;
     const cleanDeviceId = (deviceId || req.headers["x-device-id"] || "default-dev").toString();
 
     if (cleanUsername.length < 3 || cleanUsername.length > 32) {
@@ -2054,19 +2085,21 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
     if (dbPool) {
       const uRes = await dbPool.query("SELECT 1 FROM users WHERE LOWER(username) = LOWER($1)", [cleanUsername]);
       if (uRes.rows.length > 0) usernameExists = true;
-      const pRes = await dbPool.query("SELECT 1 FROM users WHERE phone = $1", [cleanPhone]);
-      if (pRes.rows.length > 0) phoneExists = true;
+      if (cleanPhone) {
+        const pRes = await dbPool.query("SELECT 1 FROM users WHERE phone = $1", [cleanPhone]);
+        if (pRes.rows.length > 0) phoneExists = true;
+      }
     } else {
       for (const u of inMemoryUsers.values()) {
         if (u.username && u.username.toLowerCase() === cleanUsername.toLowerCase()) usernameExists = true;
-        if (u.phone === cleanPhone) phoneExists = true;
+        if (cleanPhone && u.phone === cleanPhone) phoneExists = true;
       }
     }
 
     if (usernameExists) {
       return res.status(409).json({ error: "Username is already taken." });
     }
-    if (phoneExists) {
+    if (cleanPhone && phoneExists) {
       return res.status(409).json({ error: "This phone number is already registered. Please sign in." });
     }
 
@@ -2119,7 +2152,7 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
       maxAge: 90 * 24 * 3600 * 1000,
     });
 
-    console.log(`[AUTH] User registered successfully: ${cleanUsername} (${cleanPhone})`);
+    console.log(`[AUTH] User registered successfully: ${cleanUsername}${cleanPhone ? ` (${cleanPhone})` : ""}`);
     return res.json({ success: true, user: userObj, token: sessionToken });
   } catch (err: any) {
     console.error("[AUTH] Register error:", err);
@@ -2599,6 +2632,7 @@ app.post("/api/admin/verify", (req: Request, res: Response) => {
 
 // GET /api/v1/personas - Returns all active personas, ordered by display_order
 app.get("/api/v1/personas", async (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   try {
     if (dbPool) {
       const result = await dbPool.query(
@@ -2812,7 +2846,12 @@ app.post("/api/v1/personas/admin/create", async (req: Request, res: Response) =>
           variantVal
         ]
       );
-      return res.json({ success: true, persona: result.rows[0] });
+      const createdPersona = result.rows[0];
+      if (isDefaultVal) {
+        inMemoryExpertPersonas.forEach(p => { p.is_default = false; });
+      }
+      inMemoryExpertPersonas.push(createdPersona);
+      return res.json({ success: true, persona: createdPersona });
     } else {
       if (isDefaultVal) {
         inMemoryExpertPersonas.forEach(p => { p.is_default = false; });
@@ -2854,7 +2893,7 @@ app.post("/api/v1/personas/admin/create", async (req: Request, res: Response) =>
 });
 
 // PATCH /api/v1/personas/admin/:id - Update any field of a persona
-app.patch("/api/v1/personas/admin/:id", async (req: Request, res: Response) => {
+const handleUpdatePersona = async (req: Request, res: Response) => {
   if (!checkAdminAuth(req)) {
     return res.status(401).json({ success: false, error: "Unauthorized access to admin personas." });
   }
@@ -2901,7 +2940,17 @@ app.patch("/api/v1/personas/admin/:id", async (req: Request, res: Response) => {
       if (!result.rows[0]) {
         return res.status(404).json({ success: false, error: "Persona not found." });
       }
-      return res.json({ success: true, persona: result.rows[0] });
+
+      const updatedRow = result.rows[0];
+      const memIdx = inMemoryExpertPersonas.findIndex(p => p.id === id || p.slug === id);
+      if (memIdx !== -1) {
+        if (updates.is_default === true) {
+          inMemoryExpertPersonas.forEach(p => { p.is_default = false; });
+        }
+        inMemoryExpertPersonas[memIdx] = { ...inMemoryExpertPersonas[memIdx], ...updatedRow };
+      }
+
+      return res.json({ success: true, persona: updatedRow });
     } else {
       const idx = inMemoryExpertPersonas.findIndex(p => p.id === id || p.slug === id);
       if (idx === -1) {
@@ -2924,10 +2973,15 @@ app.patch("/api/v1/personas/admin/:id", async (req: Request, res: Response) => {
     console.error("PATCH /api/v1/personas/admin/:id error:", err);
     return res.status(500).json({ success: false, error: "Failed to update persona." });
   }
-});
+};
+
+app.patch("/api/v1/personas/admin/:id", handleUpdatePersona);
+app.put("/api/v1/personas/admin/:id", handleUpdatePersona);
+app.put("/api/personas/:id", handleUpdatePersona);
+app.patch("/api/personas/:id", handleUpdatePersona);
 
 // DELETE /api/v1/personas/admin/:id - Soft delete (deactivate) or hard delete
-app.delete("/api/v1/personas/admin/:id", async (req: Request, res: Response) => {
+const handleDeletePersonaHandler = async (req: Request, res: Response) => {
   if (!checkAdminAuth(req)) {
     return res.status(401).json({ success: false, error: "Unauthorized access to admin personas." });
   }
@@ -2939,6 +2993,8 @@ app.delete("/api/v1/personas/admin/:id", async (req: Request, res: Response) => 
     if (dbPool) {
       if (hard) {
         await dbPool.query(`DELETE FROM expert_personas WHERE id = $1::uuid`, [id]);
+        const memIdx = inMemoryExpertPersonas.findIndex(p => p.id === id || p.slug === id);
+        if (memIdx !== -1) inMemoryExpertPersonas.splice(memIdx, 1);
         return res.json({ success: true, message: "Persona permanently deleted." });
       } else {
         const result = await dbPool.query(
@@ -2948,6 +3004,8 @@ app.delete("/api/v1/personas/admin/:id", async (req: Request, res: Response) => 
         if (!result.rows[0]) {
           return res.status(404).json({ success: false, error: "Persona not found." });
         }
+        const memIdx = inMemoryExpertPersonas.findIndex(p => p.id === id || p.slug === id);
+        if (memIdx !== -1) inMemoryExpertPersonas[memIdx].is_active = false;
         return res.json({ success: true, message: `Persona "${result.rows[0].slug}" deactivated.` });
       }
     } else {
@@ -2968,7 +3026,10 @@ app.delete("/api/v1/personas/admin/:id", async (req: Request, res: Response) => 
     console.error("DELETE /api/v1/personas/admin/:id error:", err);
     return res.status(500).json({ success: false, error: "Failed to delete persona." });
   }
-});
+};
+
+app.delete("/api/v1/personas/admin/:id", handleDeletePersonaHandler);
+app.delete("/api/personas/:id", handleDeletePersonaHandler);
 
 // PATCH /api/v1/personas/admin/:id/reorder - Update display order
 app.patch("/api/v1/personas/admin/:id/reorder", async (req: Request, res: Response) => {
@@ -3212,6 +3273,12 @@ app.post("/api/chat/message", counselRateLimiter, async (req: Request, res: Resp
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "messages array is required." });
+    }
+
+    // Verify rate limit & guest lifetime limit
+    const usageCheck = await recordAndVerifyTabUsage(req, "chat");
+    if (!usageCheck.allowed) {
+      return res.status(usageCheck.status || 429).json(usageCheck.errorPayload);
     }
 
     let persona: any = null;
@@ -3550,6 +3617,51 @@ ${combinedContent}`;
 });
 
 const inMemoryDeviceLimits = new Map<string, { count: number; date: string }>();
+const inMemoryGuestLifetimeLimits = new Map<string, number>();
+
+async function getGuestLifetimeCount(deviceId: string): Promise<number> {
+  if (!deviceId || deviceId === "dev-unknown" || deviceId === "dev-pending") return 0;
+  if (dbPool) {
+    try {
+      const dbRes = await dbPool.query(
+        "SELECT total_queries FROM guest_device_limits WHERE device_id = $1",
+        [deviceId]
+      );
+      if (dbRes.rows.length > 0) {
+        return parseInt(dbRes.rows[0].total_queries, 10) || 0;
+      }
+    } catch (e) {
+      console.warn("Error reading guest_device_limits:", e);
+    }
+  }
+  return inMemoryGuestLifetimeLimits.get(deviceId) || 0;
+}
+
+async function incrementGuestLifetimeCount(deviceId: string): Promise<number> {
+  if (!deviceId || deviceId === "dev-unknown" || deviceId === "dev-pending") return 0;
+  let newCount = 1;
+  if (dbPool) {
+    try {
+      const dbRes = await dbPool.query(
+        `INSERT INTO guest_device_limits (device_id, total_queries, first_seen, last_seen)
+         VALUES ($1, 1, NOW(), NOW())
+         ON CONFLICT (device_id)
+         DO UPDATE SET total_queries = guest_device_limits.total_queries + 1, last_seen = NOW()
+         RETURNING total_queries`,
+        [deviceId]
+      );
+      if (dbRes.rows.length > 0) {
+        newCount = parseInt(dbRes.rows[0].total_queries, 10);
+      }
+    } catch (e) {
+      console.warn("Error incrementing guest_device_limits:", e);
+    }
+  }
+  const existing = inMemoryGuestLifetimeLimits.get(deviceId) || 0;
+  newCount = Math.max(newCount, existing + 1);
+  inMemoryGuestLifetimeLimits.set(deviceId, newCount);
+  return newCount;
+}
 
 async function getDeviceQueryCount(deviceId: string, dateStr: string): Promise<number> {
   if (!deviceId || deviceId === "dev-unknown" || deviceId === "dev-pending") return 0;
@@ -3570,18 +3682,18 @@ async function getDeviceQueryCount(deviceId: string, dateStr: string): Promise<n
   return inMemoryDeviceLimits.get(memKey)?.count || 0;
 }
 
-async function incrementDeviceQueryCount(deviceId: string, dateStr: string): Promise<number> {
+async function incrementDeviceQueryCount(deviceId: string, dateStr: string, isGuest: boolean = true): Promise<number> {
   if (!deviceId || deviceId === "dev-unknown" || deviceId === "dev-pending") return 0;
   let newCount = 1;
   if (dbPool) {
     try {
       const dbRes = await dbPool.query(
-        `INSERT INTO device_limits (id, device_id, usage_date, query_count, updated_at)
-         VALUES (gen_random_uuid()::text, $1, $2, 1, NOW())
+        `INSERT INTO device_limits (device_id, usage_date, query_count, is_guest)
+         VALUES ($1, $2, 1, $3)
          ON CONFLICT (device_id, usage_date)
-         DO UPDATE SET query_count = device_limits.query_count + 1, updated_at = NOW()
+         DO UPDATE SET query_count = device_limits.query_count + 1, is_guest = $3
          RETURNING query_count`,
-        [deviceId, dateStr]
+        [deviceId, dateStr, isGuest]
       );
       if (dbRes.rows.length > 0) {
         newCount = parseInt(dbRes.rows[0].query_count, 10);
@@ -3634,8 +3746,31 @@ async function recordAndVerifyTabUsage(req: Request, category: string): Promise<
   const today = getUtcTodayDateString();
 
   // Paid users bypass daily free query limits
-  if (currentUser?.tier === "paid") {
+  if (currentUser?.tier === "paid" || currentUser?.tier === "pro" || currentUser?.tier === "unlimited") {
     return { allowed: true };
+  }
+
+  // Guest Lifetime Limit Check (Strict 5 Queries Cap Across All Time)
+  const GUEST_LIFETIME_LIMIT = 5;
+  if (!currentUser) {
+    const lifetimeCount = await getGuestLifetimeCount(deviceId);
+    if (lifetimeCount >= GUEST_LIFETIME_LIMIT) {
+      return {
+        allowed: false,
+        status: 429,
+        errorPayload: {
+          error: `LIMIT_EXCEEDED: Guest lifetime limit of ${GUEST_LIFETIME_LIMIT} queries reached.`,
+          message: `Guest lifetime limit of ${GUEST_LIFETIME_LIMIT} queries reached on this device. Sign up or upgrade to Pro for continued access.`,
+          tab: category,
+          limit: GUEST_LIFETIME_LIMIT,
+          count: lifetimeCount,
+          remaining: 0,
+          resetInSeconds: 0,
+          paywallTrigger: true,
+          limitType: "guest_lifetime",
+        },
+      };
+    }
   }
 
   const DEVICE_LIMIT = 15;
@@ -3685,7 +3820,11 @@ async function recordAndVerifyTabUsage(req: Request, category: string): Promise<
   }
 
   // Record query usage for device and account
-  const updatedDeviceCount = await incrementDeviceQueryCount(deviceId, today);
+  const updatedDeviceCount = await incrementDeviceQueryCount(deviceId, today, !currentUser);
+
+  if (!currentUser) {
+    await incrementGuestLifetimeCount(deviceId);
+  }
 
   if (currentUser) {
     const userId = currentUser.id;
@@ -3717,15 +3856,44 @@ app.get("/api/usage", async (req: Request, res: Response) => {
   const tab = ((req.query.tab as string) || "research").toLowerCase();
   const today = getUtcTodayDateString();
 
+  if (currentUser?.tier === "paid" || currentUser?.tier === "pro" || currentUser?.tier === "unlimited") {
+    return res.json({
+      loggedIn: true,
+      tier: currentUser.tier,
+      tab,
+      deviceId,
+      deviceLimit: 999999,
+      deviceCount: 0,
+      deviceRemaining: 999999,
+      accountLimit: 999999,
+      accountCount: 0,
+      accountRemaining: 999999,
+      guestLifetimeLimit: 5,
+      guestLifetimeCount: 0,
+      limit: 999999,
+      count: 0,
+      remaining: 999999,
+      resetInSeconds: 0,
+    });
+  }
+
   const deviceCount = await getDeviceQueryCount(deviceId, today);
   const deviceRemaining = Math.max(0, 15 - deviceCount);
+
+  const GUEST_LIFETIME_LIMIT = 5;
+  let guestLifetimeCount = 0;
+  if (!currentUser) {
+    guestLifetimeCount = await getGuestLifetimeCount(deviceId);
+  }
 
   let accountCount = 0;
   if (currentUser) {
     accountCount = await getUserTotalDailyQueryCount(currentUser.id, today);
   }
   const accountRemaining = currentUser ? Math.max(0, 10 - accountCount) : deviceRemaining;
-  const effectiveRemaining = currentUser ? Math.min(deviceRemaining, accountRemaining) : deviceRemaining;
+  const effectiveRemaining = currentUser
+    ? Math.min(deviceRemaining, accountRemaining)
+    : Math.max(0, GUEST_LIFETIME_LIMIT - guestLifetimeCount);
 
   const resetInSeconds = getSecondsUntilUtcMidnight();
   res.json({
@@ -3738,10 +3906,84 @@ app.get("/api/usage", async (req: Request, res: Response) => {
     accountLimit: 10,
     accountCount,
     accountRemaining,
-    limit: currentUser ? Math.min(15, 10) : 15,
-    count: currentUser ? accountCount : deviceCount,
+    guestLifetimeLimit: GUEST_LIFETIME_LIMIT,
+    guestLifetimeCount,
+    limit: currentUser ? Math.min(15, 10) : GUEST_LIFETIME_LIMIT,
+    count: currentUser ? accountCount : guestLifetimeCount,
     remaining: effectiveRemaining,
     resetInSeconds,
+  });
+});
+
+// POST /api/query/track - Track query execution on backend PostgreSQL device_limits
+app.post("/api/query/track", async (req: Request, res: Response) => {
+  const currentUser = getCurrentUser(req);
+  const deviceId = (req.headers["x-device-id"] as string) || (req.headers["X-Device-ID"] as string) || req.body?.deviceId || (req.query.deviceId as string) || "dev-unknown";
+  const today = getUtcTodayDateString();
+  const isGuest = !currentUser;
+
+  if (currentUser?.tier === "paid") {
+    return res.json({ allowed: true, remaining: 999999, count: 0, tier: "paid" });
+  }
+
+  const GUEST_LIFETIME_LIMIT = 5;
+  let guestLifetimeCount = 0;
+  if (isGuest) {
+    guestLifetimeCount = await incrementGuestLifetimeCount(deviceId);
+    if (guestLifetimeCount >= GUEST_LIFETIME_LIMIT) {
+      return res.status(429).json({
+        success: false,
+        allowed: false,
+        error: `LIMIT_EXCEEDED: Guest lifetime limit of ${GUEST_LIFETIME_LIMIT} queries reached.`,
+        message: `Guest lifetime limit of ${GUEST_LIFETIME_LIMIT} queries reached on this device. Sign up or upgrade to Pro for continued access.`,
+        limit: GUEST_LIFETIME_LIMIT,
+        count: guestLifetimeCount,
+        remaining: 0,
+        paywallTrigger: true,
+        limitType: "guest_lifetime",
+      });
+    }
+  }
+
+  const updatedDeviceCount = await incrementDeviceQueryCount(deviceId, today, isGuest);
+
+  let updatedAccountCount = 0;
+  if (currentUser) {
+    const userId = currentUser.id;
+    if (dbPool) {
+      try {
+        await dbPool.query(
+          `INSERT INTO user_tab_usage (id, user_id, tab, usage_date, count, updated_at)
+           VALUES (gen_random_uuid()::text, $1, 'chat', $2, 1, NOW())
+           ON CONFLICT (user_id, tab, usage_date)
+           DO UPDATE SET count = user_tab_usage.count + 1, updated_at = NOW()`,
+          [userId, today]
+        );
+      } catch (e) {
+        console.warn("Error updating user_tab_usage in DB:", e);
+      }
+    }
+    const memKey = `${userId}:chat:${today}`;
+    const existing = inMemoryTabUsage.get(memKey)?.count || 0;
+    inMemoryTabUsage.set(memKey, { count: existing + 1, date: today });
+    updatedAccountCount = await getUserTotalDailyQueryCount(userId, today);
+  }
+
+  const effectiveRemaining = isGuest
+    ? Math.max(0, GUEST_LIFETIME_LIMIT - guestLifetimeCount)
+    : Math.min(Math.max(0, 15 - updatedDeviceCount), Math.max(0, 10 - updatedAccountCount));
+
+  res.json({
+    success: true,
+    deviceId,
+    isGuest,
+    deviceCount: updatedDeviceCount,
+    guestLifetimeCount,
+    accountCount: updatedAccountCount,
+    limit: isGuest ? GUEST_LIFETIME_LIMIT : 10,
+    count: isGuest ? guestLifetimeCount : updatedAccountCount,
+    remaining: effectiveRemaining,
+    today,
   });
 });
 
@@ -3922,69 +4164,6 @@ app.delete("/api/history", async (req: Request, res: Response) => {
   res.json({ success: true, message: "History cleared successfully" });
 });
 
-// Bookmarks Database Persistence API (Requirement 4)
-app.get("/api/bookmarks", async (_req: Request, res: Response) => {
-  try {
-    if (dbPool) {
-      const result = await dbPool.query("SELECT * FROM user_bookmarks ORDER BY saved_at DESC LIMIT 100");
-      if (result.rows && result.rows.length > 0) {
-        const bookmarks = result.rows.map((r: any) => ({
-          id: r.bookmark_id,
-          topic: r.topic_slug,
-          title: r.title,
-          category: r.category,
-          url: r.url,
-          description: r.description,
-          savedAt: new Date(r.saved_at).getTime(),
-        }));
-        return res.json({ bookmarks });
-      }
-    }
-    res.json({ bookmarks: inMemoryBookmarks });
-  } catch (err) {
-    res.json({ bookmarks: inMemoryBookmarks });
-  }
-});
-
-app.post("/api/bookmarks", async (req: Request, res: Response) => {
-  const item = req.body;
-  if (!item || !item.title) return res.status(400).json({ error: "Invalid bookmark item" });
-
-  const id = `${item.topic}-${item.category}-${encodeURIComponent(item.title)}`;
-  const bookmark = { ...item, id, savedAt: Date.now() };
-
-  const sessionUser = getCurrentUser(req);
-  const userId = sessionUser ? sessionUser.id : "guest_user";
-
-  if (dbPool) {
-    try {
-      await dbPool.query(
-        `INSERT INTO user_bookmarks (bookmark_id, user_id, topic_slug, category, title, url, description, saved_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-         ON CONFLICT (bookmark_id) DO UPDATE SET title = EXCLUDED.title, url = EXCLUDED.url`,
-        [id, userId, item.topic || "", item.category || "overview", item.title, item.url || "", item.description || ""]
-      );
-    } catch (err) {
-      console.warn("Error inserting bookmark into DB:", err);
-    }
-  }
-  inMemoryBookmarks = [bookmark, ...inMemoryBookmarks.filter((b) => b.id !== id)];
-  res.json({ success: true, bookmark });
-});
-
-app.delete("/api/bookmarks/:id", async (req: Request, res: Response) => {
-  const { id } = req.params;
-  if (dbPool) {
-    try {
-      await dbPool.query("DELETE FROM user_bookmarks WHERE bookmark_id = $1", [id]);
-    } catch (err) {
-      console.warn("Error deleting bookmark from DB:", err);
-    }
-  }
-  inMemoryBookmarks = inMemoryBookmarks.filter((b) => b.id !== id);
-  res.json({ success: true });
-});
-
 // Admin API Key Management Endpoints (Requirements #4 & #5)
 app.get("/api/admin/apikeys", async (_req: Request, res: Response) => {
   try {
@@ -4155,6 +4334,112 @@ app.get("/api/admin/stats", async (_req: Request, res: Response) => {
       nextRunSeconds: 120,
     },
   });
+});
+
+// Admin User Management Endpoints (Bug 9: Manual Tier Upgrade for Paid Users)
+app.get("/api/admin/users", async (_req: Request, res: Response) => {
+  try {
+    const today = getUtcTodayDateString();
+    let usersList: any[] = [];
+
+    if (dbPool) {
+      const q = `
+        SELECT 
+          u.id, 
+          u.username, 
+          u.phone, 
+          u.email, 
+          u.name, 
+          COALESCE(u.tier, 'free') AS tier, 
+          u.created_at, 
+          u.last_active_at,
+          COALESCE(
+            (SELECT dl.query_count FROM device_limits dl 
+             WHERE dl.device_id = ANY(u.trusted_devices) AND dl.usage_date = $1 
+             ORDER BY dl.query_count DESC LIMIT 1), 
+            0
+          ) AS queries_today
+        FROM users u
+        ORDER BY u.created_at DESC
+        LIMIT 100
+      `;
+      const result = await dbPool.query(q, [today]);
+      usersList = result.rows.map((row: any) => ({
+        ...row,
+        queries_today: parseInt(row.queries_today || 0, 10),
+      }));
+    } else {
+      // In-memory fallback
+      usersList = Array.from(inMemoryUsers.values()).map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        phone: u.phone,
+        email: u.email,
+        name: u.name,
+        tier: u.tier || "free",
+        created_at: u.created_at,
+        last_active_at: u.last_active_at,
+        queries_today: 0,
+      }));
+    }
+
+    return res.json({ users: usersList });
+  } catch (err: any) {
+    console.error("[Admin GET /api/admin/users error]:", err);
+    return res.status(500).json({ error: "Failed to fetch users list." });
+  }
+});
+
+app.patch("/api/admin/users/:id/tier", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { tier } = req.body || {};
+
+    const validTiers = ["free", "paid", "pro", "unlimited"];
+    if (!tier || !validTiers.includes(String(tier).toLowerCase())) {
+      return res.status(400).json({
+        error: `Invalid tier specified. Allowed values: ${validTiers.join(", ")}`,
+      });
+    }
+
+    const normalizedTier = String(tier).toLowerCase();
+
+    // 1. Update in PostgreSQL
+    if (dbPool) {
+      const updateRes = await dbPool.query(
+        "UPDATE users SET tier = $1, last_active_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username, phone, email, name, tier",
+        [normalizedTier, id]
+      );
+
+      if (updateRes.rowCount === 0) {
+        return res.status(404).json({ error: "User not found in database." });
+      }
+    }
+
+    // 2. Update in-memory user map
+    if (inMemoryUsers.has(id)) {
+      const memUser = inMemoryUsers.get(id);
+      memUser.tier = normalizedTier;
+      inMemoryUsers.set(id, memUser);
+    } else {
+      for (const [_key, val] of inMemoryUsers.entries()) {
+        if (val.id === id) {
+          val.tier = normalizedTier;
+          break;
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      userId: id,
+      tier: normalizedTier,
+      message: `User tier successfully updated to '${normalizedTier}'.`,
+    });
+  } catch (err: any) {
+    console.error("[Admin PATCH /api/admin/users/:id/tier error]:", err);
+    return res.status(500).json({ error: "Failed to update user tier." });
+  }
 });
 
 // Admin Entity Management APIs
@@ -4449,6 +4734,81 @@ Return valid JSON matching this schema:
   };
 
   return res.json(fallback);
+});
+
+// Endpoint for AI-powered topic & query extraction for Explore More (Video guides, News, MCQs)
+app.post("/api/explore/extract-topic", async (req: Request, res: Response) => {
+  const { userQuery, assistantReply, sessionTitle, personaName, personaSpecialties } = req.body || {};
+
+  const cleanFallback = (str?: string) => {
+    if (!str) return "";
+    return str
+      .replace(/\b(hi|hello|hey|salam|assalam|aoa|greetings|please|pls|thanks|thank you|can you|explain|what is|tell me about|how to|i want to know|bro|sir|mam|help me with)\b/gi, "")
+      .replace(/[^\w\s-]/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+
+  const rawSubject = cleanFallback(userQuery) || cleanFallback(sessionTitle) || cleanFallback(assistantReply?.slice(0, 120)) || (Array.isArray(personaSpecialties) && personaSpecialties[0]) || "General Science";
+  const defaultTopic = rawSubject.length > 2 ? rawSubject.split(" ").slice(0, 4).join(" ") : "Core Fundamentals";
+
+  const fallbackResult = {
+    displayTopic: defaultTopic.charAt(0).toUpperCase() + defaultTopic.slice(1),
+    videoQuery: `${defaultTopic} lecture guide tutorial`.trim(),
+    newsQuery: `${defaultTopic} research breakthrough news`.trim(),
+    mcqTopic: defaultTopic,
+    isFallback: true
+  };
+
+  try {
+    const prompt = `You are an educational search query optimizer.
+Analyze this tutoring conversation context:
+- User Message: "${(userQuery || '').slice(0, 400)}"
+- Assistant Reply Snippet: "${(assistantReply || '').slice(0, 500)}"
+- Session Title: "${(sessionTitle || '').slice(0, 100)}"
+- Persona: "${(personaName || '')}" (Specialties: ${Array.isArray(personaSpecialties) ? personaSpecialties.join(', ') : ''})
+
+Task:
+1. Determine the exact academic, scientific, or technical concept discussed.
+2. If the user only said a greeting ("hi", "hello", "hey") or asked a vague question, extract the main subject from the assistant's reply or persona specialties instead. NEVER output "hi", "hello", or greetings as the topic.
+3. Generate:
+- displayTopic: Concise title (2-4 words, Title Case, e.g. "Photosynthesis C4 Pathway", "Bernoulli's Principle", "Enzyme Kinetics").
+- videoQuery: Optimized YouTube search terms for high-quality lectures (e.g. "C4 photosynthesis cycle plant biology lecture").
+- newsQuery: Optimized search keywords for recent scientific/industry research or news (e.g. "C4 photosynthesis crop engineering research").
+- mcqTopic: Exact subject phrase for generating multiple choice practice questions (e.g. "C4 and CAM Photosynthesis").
+
+Return valid JSON:
+{
+  "displayTopic": "string",
+  "videoQuery": "string",
+  "newsQuery": "string",
+  "mcqTopic": "string"
+}`;
+
+    const aiRes = await callGeminiWithFallback({
+      contents: prompt,
+      responseMimeType: "application/json",
+    });
+
+    if (aiRes && aiRes.text) {
+      const cleaned = aiRes.text.replace(/^```(?:json)?\s*|\s*```$/gi, "").trim();
+      const parsed = JSON.parse(cleaned);
+      if (parsed.displayTopic && parsed.displayTopic.toLowerCase() !== "hi" && parsed.displayTopic.toLowerCase() !== "hello") {
+        return res.json({
+          displayTopic: parsed.displayTopic,
+          videoQuery: parsed.videoQuery || `${parsed.displayTopic} lecture`,
+          newsQuery: parsed.newsQuery || `${parsed.displayTopic} news`,
+          mcqTopic: parsed.mcqTopic || parsed.displayTopic,
+          modelUsed: aiRes.modelUsed,
+          isBackupModel: aiRes.isBackupModel
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Topic extraction Gemini call failed, using heuristic fallback:", err);
+  }
+
+  return res.json(fallbackResult);
 });
 
 // Persistence Route: Automatic Search Persistence into Supabase PostgreSQL (Step 2)
@@ -5943,7 +6303,7 @@ function getIndexHtmlTemplate(): string {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google-site-verification" content="DJw3CA-qjN0OAufoAUbl0Woh_g4weJrlEaPwV6T00BM" />
-    <title>Bifrost AI Engine | Universal Knowledge Explorer</title>
+    <title>G-AGE AI — The Next Age of Knowledge &amp; Intelligence</title>
   </head>
   <body>
     <div id="root"></div>
@@ -6053,7 +6413,7 @@ app.get("/topic/:slug", async (req: Request, res: Response) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>410 Gone - Topic Synthesis Expired | Bifrost AI Engine</title>
+  <title>410 Gone - Topic Synthesis Expired | G-AGE AI Engine</title>
   <meta name="robots" content="noindex, follow" />
   <meta name="description" content="The topic synthesis page for ${escapeHtml(topicName)} has expired due to 45 days of inactivity." />
 </head>
@@ -6099,7 +6459,7 @@ app.get("/topic/:slug", async (req: Request, res: Response) => {
     },
     "publisher": {
       "@type": "Organization",
-      "name": "Bifrost AI Engine",
+      "name": "G-AGE AI Engine",
       "url": baseUrl,
     },
     "datePublished": new Date().toISOString(),
@@ -6257,7 +6617,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Bifrost AI Engine running on http://localhost:${PORT}`);
+    console.log(`🚀 G-AGE AI Engine running on http://localhost:${PORT}`);
   });
 }
 

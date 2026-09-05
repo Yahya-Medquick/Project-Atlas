@@ -8,7 +8,6 @@ import {
   Check,
   X,
   MessageSquare,
-  Bookmark,
   FileText,
   Code2,
   Cpu,
@@ -36,8 +35,6 @@ interface ChatSidebarProps {
   onRenameSession: (id: string, newTitle: string) => void;
   onDeleteSession: (id: string) => void;
   onPinSession: (id: string) => void;
-  onOpenBookmarks: () => void;
-  bookmarksCount: number;
   onOpenNotes: () => void;
   notesCount: number;
   onOpenAdmin: () => void;
@@ -66,8 +63,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   onRenameSession,
   onDeleteSession,
   onPinSession,
-  onOpenBookmarks,
-  bookmarksCount,
   onOpenNotes,
   notesCount,
   onOpenAdmin,
@@ -279,9 +274,14 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
               <Sparkles className="w-4 h-4" />
             </div>
-            <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">
-              Bifrost <span className="text-indigo-600 dark:text-indigo-400 font-normal">AI</span>
-            </span>
+            <div>
+              <div className="font-bold text-sm tracking-tight text-slate-900 dark:text-white leading-tight">
+                G-AGE <span className="text-indigo-600 dark:text-indigo-400 font-normal">AI</span>
+              </div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium leading-none">
+                The Next Age of Intelligence
+              </div>
+            </div>
           </div>
 
           <button
@@ -437,21 +437,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
         {/* Bottom Quick Tools & User Profile */}
         <div className="p-2.5 border-t border-slate-200/80 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-950/60 shrink-0 space-y-1.5">
-          {/* Action Row: Bookmarks, Notes, Theme */}
-          <div className="grid grid-cols-4 gap-1">
-            <button
-              onClick={onOpenBookmarks}
-              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-amber-500 transition-colors flex items-center justify-center relative"
-              title="Saved Bookmarks"
-            >
-              <Bookmark className="w-4 h-4" />
-              {bookmarksCount > 0 && (
-                <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-amber-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                  {bookmarksCount}
-                </span>
-              )}
-            </button>
-
+          {/* Action Row: Notes, Admin, Theme */}
+          <div className="grid grid-cols-3 gap-1">
             <button
               onClick={onOpenNotes}
               className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-indigo-500 transition-colors flex items-center justify-center relative"
@@ -495,10 +482,17 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                   className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
                 />
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                    {user.name}
-                  </span>
-                  <span className="text-[10px] text-slate-400 truncate">{user.email}</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      {user.name}
+                    </span>
+                    {(user.tier === 'paid' || user.tier === 'pro' || user.tier === 'unlimited') && (
+                      <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80 shrink-0 shadow-2xs">
+                        PRO
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-slate-400 truncate">{user.email || user.username || user.phone}</span>
                 </div>
               </div>
 

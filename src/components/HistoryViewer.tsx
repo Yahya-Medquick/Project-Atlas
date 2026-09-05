@@ -199,7 +199,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
             {filterStarredOnly
               ? "You haven't starred any searches yet. Star searches in your history to keep them easily accessible."
-              : "As you search topics across Bifrost AI tabs, your queries will automatically record here."}
+              : "As you search topics across G-AGE AI tabs, your queries will automatically record here."}
           </p>
         </div>
       ) : (

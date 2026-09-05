@@ -22,7 +22,7 @@ export interface UserAuth {
   email?: string;
   name?: string;
   avatar_url?: string;
-  tier: 'free' | 'logged_out' | 'paid';
+  tier: 'free' | 'logged_out' | 'paid' | 'pro' | 'unlimited';
   created_at?: string;
   preferred_mode?: 'research' | 'learning';
   is_guest?: boolean;
@@ -307,18 +307,6 @@ export interface UserProfile {
     autoExpandSynonyms: boolean;
     compactView: boolean;
   };
-}
-
-export interface BookmarkItem {
-  id: string;
-  topic: string;
-  title: string;
-  category: CategoryType;
-  url: string;
-  description?: string;
-  savedAt: number;
-  collectionId?: string;
-  qualityScore?: number;
 }
 
 export interface WorkspaceCollection {

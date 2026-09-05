@@ -1,6 +1,6 @@
-# Bifrost AI — Universal Knowledge Engine 🗺️✨
+# G-AGE AI — Universal Knowledge Engine 🗺️✨
 
-> **Bifrost AI** is an enterprise-grade intelligent knowledge exploration platform that organizes human knowledge into structured, interactive multi-dimensional categories across peer-reviewed scholarly literature, open-source codebases, AI synthesis, and interactive physics sandboxes.
+> **G-AGE AI** is an enterprise-grade intelligent knowledge exploration platform that organizes human knowledge into structured, interactive multi-dimensional categories across peer-reviewed scholarly literature, open-source codebases, AI synthesis, and interactive physics sandboxes.
 >
 > 🚀 **Live Production Link:** [bifrostai.up.railway.app](https://bifrostai.up.railway.app)
 > 📦 **GitHub Repository:** Hosted on GitHub for version control and CI/CD.
@@ -92,7 +92,7 @@ npm start
 
 ## 🚂 Railway Deployment & Docker Support
 
-Bifrost AI is fully containerized and configured for rapid delivery via **Railway**.
+G-AGE AI is fully containerized and configured for rapid delivery via **Railway**.
 
 ### Automated Deployments (Recommended)
 1. Push the code repository to GitHub.
@@ -105,13 +105,13 @@ Build and run using the optimized multi-stage `Dockerfile`:
 
 ```bash
 # Build Docker Image
-docker build -t bifrost-ai:latest .
+docker build -t gage-ai:latest .
 
 # Run Production Container Locally
-docker run -d -p 3000:3000 --name bifrost-app \
+docker run -d -p 3000:3000 --name gage-app \
   -e NODE_ENV=production \
   -e GEMINI_API_KEY="your-gemini-key" \
-  bifrost-ai:latest
+  gage-ai:latest
 ```
 
 ---
@@ -126,4 +126,4 @@ docker run -d -p 3000:3000 --name bifrost-app \
 ---
 
 ## 📄 License
-Apache 2.0. Bifrost AI Universal Knowledge Engine.
+Apache 2.0. G-AGE AI Universal Knowledge Engine.

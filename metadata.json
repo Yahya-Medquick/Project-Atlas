@@ -1,6 +1,6 @@
 {
-  "name": "Bifrost AI Knowledge Engine",
-  "description": "Chat-first, persona-driven academic intelligence engine featuring a three-panel responsive layout, Concept, Exam, and Research modes, expert specialist consults, and persistent notes.",
+  "name": "G-AGE AI Knowledge Engine",
+  "description": "G-AGE AI: The Next Age of Knowledge & Intelligence. Chat-first, persona-driven academic intelligence engine featuring Concept, Exam, and Research modes, expert specialist consults, and persistent notes.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

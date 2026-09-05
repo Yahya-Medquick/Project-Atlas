@@ -6,7 +6,7 @@ const { Pool } = pg;
 async function runMigration() {
   console.log('[Migration] Starting expert_personas table reseed...');
 
-  const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/bifrost';
+  const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/gage';
   const pool = new Pool({
     connectionString,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false

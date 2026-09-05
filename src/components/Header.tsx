@@ -1,12 +1,10 @@
 import React, { useState } from "react";
-import { Moon, Sun, Bookmark, Cpu, Code2, ChevronDown, LogIn, LogOut, History, Shield, Compass } from "lucide-react";
+import { Moon, Sun, Cpu, Code2, ChevronDown, LogIn, LogOut, History, Shield, Compass } from "lucide-react";
 import { useUser } from "../context/UserContext";
 
 interface HeaderProps {
   theme: "dark" | "light";
   toggleTheme: () => void;
-  onOpenBookmarks: () => void;
-  bookmarksCount: number;
   onGoHome: () => void;
   onOpenAdmin: () => void;
   onOpenProfile: () => void;
@@ -19,8 +17,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   theme,
   toggleTheme,
-  onOpenBookmarks,
-  bookmarksCount,
   onGoHome,
   onOpenAdmin,
   onOpenProfile,
@@ -44,7 +40,10 @@ export const Header: React.FC<HeaderProps> = ({
             <Compass className="w-4 h-4" />
           </div>
           <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white">
-            Bifrost <span className="text-indigo-600 dark:text-indigo-400 font-normal">AI</span>
+            G-AGE <span className="text-indigo-600 dark:text-indigo-400 font-normal">AI</span>
+          </span>
+          <span className="hidden xl:inline-block text-[11px] font-medium text-slate-400 dark:text-slate-500 ml-1.5 pl-2.5 border-l border-slate-200 dark:border-slate-800">
+            The Next Age of Knowledge &amp; Intelligence
           </span>
         </div>
 
@@ -94,22 +93,6 @@ export const Header: React.FC<HeaderProps> = ({
             title="Toggle Theme"
           >
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
-
-          {/* Saved Bookmarks Button */}
-          <button
-            onClick={onOpenBookmarks}
-            aria-label={`View ${bookmarksCount} saved bookmarks`}
-            className="p-2 sm:px-3 sm:py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors flex items-center gap-1.5 text-xs font-medium"
-            title="Saved Items"
-          >
-            <Bookmark className="w-3.5 h-3.5 text-amber-500" />
-            <span className="hidden sm:inline">Saved</span>
-            {bookmarksCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-amber-500 text-white">
-                {bookmarksCount}
-              </span>
-            )}
           </button>
 
           {/* API Docs Button */}

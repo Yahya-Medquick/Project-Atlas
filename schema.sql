@@ -167,7 +167,30 @@ BEGIN
 END;
 $$;
 
--- Email verification tokens
+-- 12. Device Limits Table
+CREATE TABLE IF NOT EXISTS device_limits (
+  device_id VARCHAR(255) NOT NULL,
+  usage_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  query_count INTEGER NOT NULL DEFAULT 0,
+  is_guest BOOLEAN DEFAULT true,
+  PRIMARY KEY (device_id, usage_date)
+);
+
+ALTER TABLE device_limits ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public device limits access" ON device_limits FOR ALL USING (true);
+
+-- 13. Guest Device Lifetime Query Limits Table (Permanent 5 queries)
+CREATE TABLE IF NOT EXISTS guest_device_limits (
+  device_id VARCHAR(255) PRIMARY KEY,
+  total_queries INTEGER NOT NULL DEFAULT 0,
+  first_seen TIMESTAMPTZ DEFAULT NOW(),
+  last_seen TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE guest_device_limits ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public guest device limits access" ON guest_device_limits FOR ALL USING (true);
+
+
 CREATE TABLE IF NOT EXISTS email_verifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email VARCHAR(255) NOT NULL,
@@ -233,9 +256,12 @@ CREATE TABLE IF NOT EXISTS expert_personas (
   is_active     BOOLEAN DEFAULT true,
   is_default    BOOLEAN DEFAULT false,
   display_order INTEGER DEFAULT 0,
+  variant       VARCHAR(16) DEFAULT 'global',
   created_at    TIMESTAMPTZ DEFAULT now(),
   updated_at    TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE expert_personas ADD COLUMN IF NOT EXISTS variant VARCHAR(16) DEFAULT 'global';
 
 CREATE INDEX IF NOT EXISTS idx_persona_domains ON expert_personas USING GIN(domains);
 CREATE INDEX IF NOT EXISTS idx_persona_active ON expert_personas(is_active, display_order);

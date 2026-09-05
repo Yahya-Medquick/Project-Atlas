@@ -1,18 +1,14 @@
 import React, { useState } from "react";
 import { NewsArticle } from "../../types";
-import { ExternalLink, Newspaper, Clock, Bookmark, Check, Plus } from "lucide-react";
+import { ExternalLink, Newspaper, Clock, Check, Plus } from "lucide-react";
 import { useNotes } from "../../hooks/useNotes";
 
 interface NewsCardProps {
   article: NewsArticle;
-  onBookmark?: (article: NewsArticle) => void;
-  isBookmarked?: boolean;
 }
 
 export const NewsCard: React.FC<NewsCardProps> = ({
   article,
-  onBookmark,
-  isBookmarked = false,
 }) => {
   const { addNote } = useNotes();
   const [added, setAdded] = useState(false);
@@ -65,19 +61,6 @@ export const NewsCard: React.FC<NewsCardProps> = ({
 
       <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-1.5">
-          {onBookmark && (
-            <button
-              onClick={() => onBookmark(article)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              {isBookmarked ? (
-                <Check className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <Bookmark className="w-4 h-4" />
-              )}
-            </button>
-          )}
-
           <button
             onClick={handleAddNote}
             className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 font-medium cursor-pointer"

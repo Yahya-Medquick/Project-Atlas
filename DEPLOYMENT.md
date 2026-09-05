@@ -1,6 +1,6 @@
-# Bifrost AI — Production Deployment Guide
+# G-AGE AI — Production Deployment Guide
 
-This guide details the step-by-step procedures for deploying **Bifrost AI | Universal Knowledge Engine** into high-availability production environments, with a primary focus on Railway.
+This guide details the step-by-step procedures for deploying **G-AGE AI | Universal Knowledge Engine** into high-availability production environments, with a primary focus on Railway.
 
 ---
 
@@ -53,15 +53,15 @@ npm start
 
 ## 4. Deploying to Railway (Recommended)
 
-Railway is the primary cloud host for Bifrost AI, serving traffic at **`bifrostai.up.railway.app`**.
+Railway is the primary cloud host for G-AGE AI, serving traffic at **`bifrostai.up.railway.app`**.
 
 ### Step 1: Push Code to GitHub
 Ensure your repository is initialized and pushed to a remote GitHub repository.
 ```bash
 git init
 git add .
-git commit -m "feat: initial commit for Bifrost AI"
-git remote add origin https://github.com/yourusername/bifrost-ai.git
+git commit -m "feat: initial commit for G-AGE AI"
+git remote add origin https://github.com/yourusername/gage-ai.git
 git branch -M main
 git push -u origin main
 ```
@@ -69,7 +69,7 @@ git push -u origin main
 ### Step 2: Provision a New Project on Railway
 1. Go to [Railway](https://railway.app) and log in.
 2. Click **New Project** and select **Deploy from GitHub repo**.
-3. Choose your `bifrost-ai` repository.
+3. Choose your `gage-ai` repository.
 
 ### Step 3: Configure Environment Variables
 In the **Variables** tab of your Railway service, add the following parameters:
@@ -90,18 +90,18 @@ Railway will automatically detect the root `Dockerfile`, build the multi-stage i
 
 ### A. Build Docker Image
 ```bash
-docker build -t bifrost-ai:latest .
+docker build -t gage-ai:latest .
 ```
 
 ### B. Test Docker Container Locally
 ```bash
 docker run -d \
-  --name bifrost-prod \
+  --name gage-prod \
   -p 3000:3000 \
   -e NODE_ENV=production \
   -e GEMINI_API_KEY="your-gemini-key" \
   -e ADMIN_TOKEN="your-admin-token" \
-  bifrost-ai:latest
+  gage-ai:latest
 ```
 
 ### C. Verify Container Health
@@ -119,11 +119,11 @@ curl http://localhost:3000/api/v1/health
 gcloud auth login
 
 # 2. Build and Submit to Artifact Registry
-gcloud builds submit --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/bifrost/explorer:v1.0.0
+gcloud builds submit --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/gage/explorer:v1.0.0
 
 # 3. Deploy Service to Cloud Run
-gcloud run deploy bifrost-ai \
-  --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/bifrost/explorer:v1.0.0 \
+gcloud run deploy gage-ai \
+  --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/gage/explorer:v1.0.0 \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
@@ -142,25 +142,25 @@ Apply deployment and service manifests:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: bifrost-ai
+  name: gage-ai
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: bifrost-ai
+      app: gage-ai
   template:
     metadata:
       labels:
-        app: bifrost-ai
+        app: gage-ai
     spec:
       containers:
       - name: explorer
-        image: bifrost-ai:latest
+        image: gage-ai:latest
         ports:
         - containerPort: 3000
         envFrom:
         - secretRef:
-            name: bifrost-secrets
+            name: gage-secrets
         livenessProbe:
           httpGet:
             path: /api/v1/health

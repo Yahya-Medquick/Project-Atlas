@@ -28,6 +28,11 @@ import {
   GripVertical,
   Globe,
   MapPin,
+  Users,
+  Phone,
+  Mail,
+  Crown,
+  Clock,
 } from "lucide-react";
 import { AdminStats, Entity, ExpertPersona } from "../types";
 import {
@@ -53,8 +58,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [entities, setEntities] = useState<Entity[]>([]);
   const [apiKeys, setApiKeys] = useState<any[]>([]);
   const [personas, setPersonas] = useState<ExpertPersona[]>([]);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [userTierFilter, setUserTierFilter] = useState<"all" | "free" | "paid">("all");
+  const [updatingUserTierId, setUpdatingUserTierId] = useState<string | null>(null);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "entities" | "cache" | "apikeys" | "personas">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "entities" | "cache" | "apikeys" | "personas" | "users">("overview");
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
   // New Expert Persona form state
@@ -153,10 +163,51 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           setPersonas(Array.isArray(fallbackData) ? fallbackData : fallbackData.personas || []);
         }
       }
+
+      // Fetch users list
+      try {
+        const usersRes = await fetch("/api/admin/users", { headers: authHeaders });
+        if (usersRes.ok) {
+          const usersData = await usersRes.json();
+          setUsersList(usersData.users || []);
+        }
+      } catch (uErr) {
+        console.warn("Failed to fetch users for admin:", uErr);
+      }
     } catch (err) {
       console.warn("Error fetching admin stats:", err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleUpdateUserTier = async (userId: string, targetTier: "free" | "paid") => {
+    setUpdatingUserTierId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/tier`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Token": adminToken,
+        },
+        body: JSON.stringify({ tier: targetTier }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUsersList((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, tier: targetTier } : u))
+        );
+        setRefreshMessage(`User tier updated to ${targetTier.toUpperCase()}`);
+        setTimeout(() => setRefreshMessage(null), 3500);
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to update user tier");
+      }
+    } catch (err: any) {
+      console.error("Failed to update user tier:", err);
+      alert(err.message || "Failed to update user tier");
+    } finally {
+      setUpdatingUserTierId(null);
     }
   };
 
@@ -269,7 +320,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       });
 
       if (res.ok) {
-        setRefreshMessage(`Entity "${newTitle}" registered in Bifrost AI database!`);
+        setRefreshMessage(`Entity "${newTitle}" registered in G-AGE AI database!`);
         setNewTitle("");
         setNewSlug("");
         setNewDesc("");
@@ -599,7 +650,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                Bifrost AI System Dashboard
+                G-AGE AI System Dashboard
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
                   <Activity className="w-3 h-3 animate-pulse" /> Node Cluster Active
                 </span>
@@ -695,6 +746,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           >
             <UserCheck className="w-4 h-4 text-emerald-500" />
             <span>Counseling Personas ({personas.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("users")}
+            className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === "users"
+                ? "border-indigo-600 text-indigo-600 dark:text-indigo-400 font-semibold"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
+            }`}
+          >
+            <Users className="w-4 h-4 text-blue-500" />
+            <span>User Management ({usersList.length})</span>
           </button>
         </div>
 
@@ -1192,7 +1254,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         apiKeys.map((k) => (
                           <tr key={k.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/50">
                             <td className="py-3 px-3 font-mono font-bold text-purple-600 dark:text-purple-400">
-                              {k.keyPrefix || "bifrost_live_..."}
+                              {k.keyPrefix || "gage_live_..."}
                             </td>
                             <td className="py-3 px-3">
                               <div className="font-semibold text-slate-900 dark:text-white">{k.ownerName}</div>
@@ -1826,6 +1888,222 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </div>
               )}
 
+            </div>
+          )}
+
+          {/* TAB 6: USERS MANAGEMENT (BUG 9: Manual Tier Upgrade for Paid Users) */}
+          {activeTab === "users" && (
+            <div className="space-y-6 animate-in fade-in">
+              {/* Header Controls & Filters */}
+              <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row gap-4 items-center justify-between">
+                <div className="flex-1 w-full flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search users by username, phone, or email..."
+                      value={userSearchQuery}
+                      onChange={(e) => setUserSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <select
+                    value={userTierFilter}
+                    onChange={(e) => setUserTierFilter(e.target.value as any)}
+                    className="px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">All Tiers ({usersList.length})</option>
+                    <option value="free">
+                      Free Tier ({usersList.filter((u) => u.tier === "free").length})
+                    </option>
+                    <option value="paid">
+                      Paid / Pro ({usersList.filter((u) => u.tier === "paid" || u.tier === "pro" || u.tier === "unlimited").length})
+                    </option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 self-end md:self-auto shrink-0">
+                  <button
+                    onClick={() => fetchAdminData()}
+                    disabled={isLoading}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                    <span>Refresh Users</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* User Metric Pills */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Registered</span>
+                    <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{usersList.length}</p>
+                  </div>
+                  <Users className="w-6 h-6 text-blue-500 opacity-80" />
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Free Accounts</span>
+                    <p className="text-xl font-black text-slate-700 dark:text-slate-300 mt-0.5">
+                      {usersList.filter((u) => u.tier === "free").length}
+                    </p>
+                  </div>
+                  <UserCheck className="w-6 h-6 text-slate-400 opacity-80" />
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/80 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Paid / Unlimited</span>
+                    <p className="text-xl font-black text-amber-700 dark:text-amber-300 mt-0.5">
+                      {usersList.filter((u) => u.tier === "paid" || u.tier === "pro" || u.tier === "unlimited").length}
+                    </p>
+                  </div>
+                  <Crown className="w-6 h-6 text-amber-500 opacity-80" />
+                </div>
+              </div>
+
+              {/* Users List Table / Card View */}
+              <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+                    <thead className="bg-slate-50 dark:bg-slate-800/70 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="py-3 px-4">User</th>
+                        <th className="py-3 px-4">Phone / Contact</th>
+                        <th className="py-3 px-4">Queries Today</th>
+                        <th className="py-3 px-4">Current Tier</th>
+                        <th className="py-3 px-4 text-right">Manual Tier Upgrade / Downgrade</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                      {usersList
+                        .filter((u) => {
+                          const matchesQuery =
+                            !userSearchQuery.trim() ||
+                            (u.username && u.username.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+                            (u.name && u.name.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+                            (u.phone && u.phone.includes(userSearchQuery)) ||
+                            (u.email && u.email.toLowerCase().includes(userSearchQuery.toLowerCase()));
+
+                          const isPaid = u.tier === "paid" || u.tier === "pro" || u.tier === "unlimited";
+                          const matchesTier =
+                            userTierFilter === "all" ||
+                            (userTierFilter === "free" && !isPaid) ||
+                            (userTierFilter === "paid" && isPaid);
+
+                          return matchesQuery && matchesTier;
+                        })
+                        .map((u) => {
+                          const isPaid = u.tier === "paid" || u.tier === "pro" || u.tier === "unlimited";
+                          const isUpdating = updatingUserTierId === u.id;
+
+                          return (
+                            <tr key={u.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                              <td className="py-3.5 px-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center text-xs shadow-xs shrink-0">
+                                    {(u.name || u.username || "U").slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="font-bold text-slate-900 dark:text-white truncate">
+                                      {u.name || u.username || "Unnamed User"}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 truncate">
+                                      {u.username ? `@${u.username}` : u.id.slice(0, 8)}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <div className="space-y-0.5">
+                                  {u.phone ? (
+                                    <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
+                                      <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
+                                      <span>{u.phone}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 italic">No phone registered</span>
+                                  )}
+                                  {u.email && (
+                                    <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-[10px] truncate">
+                                      <Mail className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                      <span className="truncate">{u.email}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold">
+                                  <Activity className="w-3 h-3 text-indigo-500" />
+                                  <span>{u.queries_today || 0} today</span>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                {isPaid ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shadow-2xs">
+                                    <Crown className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                    PAID (UNLIMITED)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                    FREE (10/day)
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="py-3.5 px-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {isPaid ? (
+                                    <button
+                                      onClick={() => handleUpdateUserTier(u.id, "free")}
+                                      disabled={isUpdating}
+                                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                      title="Downgrade to free tier"
+                                    >
+                                      {isUpdating ? (
+                                        <RefreshCw className="w-3 h-3 animate-spin" />
+                                      ) : null}
+                                      <span>Downgrade to Free</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleUpdateUserTier(u.id, "paid")}
+                                      disabled={isUpdating}
+                                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition-colors shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                      title="Manually upgrade user to paid tier"
+                                    >
+                                      {isUpdating ? (
+                                        <RefreshCw className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <Crown className="w-3 h-3" />
+                                      )}
+                                      <span>Upgrade to Paid</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                      {usersList.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-slate-400">
+                            No registered users found.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 

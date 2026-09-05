@@ -5,7 +5,7 @@ import {
   RotateCcw,
   Copy,
   Check,
-  Bookmark,
+  CheckCheck,
   FileText,
   PanelLeft,
   PanelRight,
@@ -32,6 +32,10 @@ import {
   Layers,
   Play,
   Newspaper,
+  Smile,
+  Paperclip,
+  Mic,
+  MoreVertical,
 } from 'lucide-react';
 import { ChatSession, ChatMessage, ChatMode, ConceptSpecs, ExamSpecs, ResearchSpecs } from '../../types/chat';
 import { ExpertPersona, EXPERTS, EXPERTS_PK } from '../../data/experts';
@@ -43,14 +47,15 @@ import { NewsCard } from '../cards/NewsCard';
 import { MultiLevelDefinitionCard } from '../MultiLevelDefinitionCard';
 
 // Helper component for YouTube Video Guides (backend YouTube Data API integration)
-const ExploreVideosSection: React.FC<{ topic: string }> = ({ topic }) => {
+const ExploreVideosSection: React.FC<{ topic: string; query?: string }> = ({ topic, query }) => {
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const searchQuery = query || topic;
 
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
-    fetch(`/api/category/videos?q=${encodeURIComponent(topic)}`)
+    fetch(`/api/category/videos?q=${encodeURIComponent(searchQuery)}`)
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data && Array.isArray(data.items)) {
@@ -60,11 +65,11 @@ const ExploreVideosSection: React.FC<{ topic: string }> = ({ topic }) => {
       .catch((err) => console.error("Error fetching YouTube videos:", err))
       .finally(() => { if (isMounted) setLoading(false); });
     return () => { isMounted = false; };
-  }, [topic]);
+  }, [searchQuery]);
 
   if (loading) {
     return (
-      <div className="py-6 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+      <div className="py-6 text-center text-xs text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2">
         <div className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
         <span>Loading YouTube video guides for {topic}...</span>
       </div>
@@ -89,14 +94,15 @@ const ExploreVideosSection: React.FC<{ topic: string }> = ({ topic }) => {
 };
 
 // Helper component for Recent News (backend News API integration)
-const ExploreNewsSection: React.FC<{ topic: string }> = ({ topic }) => {
+const ExploreNewsSection: React.FC<{ topic: string; query?: string }> = ({ topic, query }) => {
   const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const searchQuery = query || topic;
 
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
-    fetch(`/api/category/news?q=${encodeURIComponent(topic)}`)
+    fetch(`/api/category/news?q=${encodeURIComponent(searchQuery)}`)
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data && Array.isArray(data.items)) {
@@ -106,11 +112,11 @@ const ExploreNewsSection: React.FC<{ topic: string }> = ({ topic }) => {
       .catch((err) => console.error("Error fetching news:", err))
       .finally(() => { if (isMounted) setLoading(false); });
     return () => { isMounted = false; };
-  }, [topic]);
+  }, [searchQuery]);
 
   if (loading) {
     return (
-      <div className="py-6 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+      <div className="py-6 text-center text-xs text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2">
         <div className="w-3 h-3 rounded-full bg-blue-500 animate-ping" />
         <span>Fetching recent news about {topic}...</span>
       </div>
@@ -146,7 +152,6 @@ interface ChatStageProps {
   isRightPanelOpen: boolean;
   onUpdateSessionMeta: (sessionId: string, updates: Partial<Pick<ChatSession, 'mode' | 'personaId' | 'variant' | 'specs' | 'title'>>) => void;
   onSaveToNotes: (content: string, title?: string) => void;
-  onSaveBookmark: (title: string, category: any, url?: string, description?: string) => void;
   onOpenPaywall: () => void;
   onOpenKnowledgeGraph?: () => void;
   queryUsage: {
@@ -170,7 +175,6 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   isRightPanelOpen,
   onUpdateSessionMeta,
   onSaveToNotes,
-  onSaveBookmark,
   onOpenPaywall,
   onOpenKnowledgeGraph,
   queryUsage,
@@ -181,11 +185,23 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   const [showDefinitionCard, setShowDefinitionCard] = useState<boolean>(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [savedNotesMsgId, setSavedNotesMsgId] = useState<string | null>(null);
-  const [savedBookmarkMsgId, setSavedBookmarkMsgId] = useState<string | null>(null);
   const [revealedSolutions, setRevealedSolutions] = useState<Record<string, boolean>>({});
   const [activeLevelTabs, setActiveLevelTabs] = useState<Record<string, 'eli5' | 'highSchool' | 'undergrad' | 'phd'>>({});
+  const [expandedExploreMsgIds, setExpandedExploreMsgIds] = useState<Record<string, boolean>>({});
   const [activeExploreMsgId, setActiveExploreMsgId] = useState<string | null>(null);
   const [activeExploreTab, setActiveExploreTab] = useState<'videos' | 'news' | 'mcqs' | null>(null);
+  const [extractedTopics, setExtractedTopics] = useState<
+    Record<
+      string,
+      {
+        displayTopic: string;
+        videoQuery: string;
+        newsQuery: string;
+        mcqTopic: string;
+        loading?: boolean;
+      }
+    >
+  >({});
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const latestTurnRef = useRef<HTMLDivElement>(null);
@@ -244,13 +260,6 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     setTimeout(() => setSavedNotesMsgId(null), 2500);
   };
 
-  const handleSaveBookmarkAction = (msgId: string, content: string) => {
-    const title = session?.title || `${activePersona.name} Insight`;
-    onSaveBookmark(title, activeMode === 'research' ? 'research' : 'overview', window.location.href, content.substring(0, 160));
-    setSavedBookmarkMsgId(msgId);
-    setTimeout(() => setSavedBookmarkMsgId(null), 2500);
-  };
-
   const handleModeChange = (mode: ChatMode) => {
     if (session) {
       onUpdateSessionMeta(session.id, { mode });
@@ -271,6 +280,107 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     setActiveLevelTabs((prev) => ({ ...prev, [msgId]: lvl }));
   };
 
+  const extractTopicForMessage = async (msgId: string, msgContent: string, msgIndex: number) => {
+    if (extractedTopics[msgId] && !extractedTopics[msgId].loading) {
+      return;
+    }
+
+    const userMsg = session?.messages
+      .slice(0, msgIndex)
+      .reverse()
+      .find((m) => m.role === 'user');
+
+    const cleanFallback = (str?: string) => {
+      if (!str) return '';
+      return str
+        .replace(/\b(hi|hello|hey|salam|assalam|aoa|greetings|please|pls|thanks|thank you|can you|explain|what is|tell me about|how to|i want to know|bro|sir|mam|help me with)\b/gi, '')
+        .replace(/[^\w\s-]/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const rawSubject =
+      cleanFallback(userMsg?.content) ||
+      cleanFallback(session?.title && session.title !== 'New Consultation' ? session.title : '') ||
+      cleanFallback(msgContent.slice(0, 100)) ||
+      activePersona.specialties?.[0] ||
+      activePersona.name ||
+      'Core Fundamentals';
+
+    const defaultTopic = rawSubject.length > 2 ? rawSubject.split(' ').slice(0, 4).join(' ') : 'Core Concepts';
+    const initialDisplayTopic = defaultTopic.charAt(0).toUpperCase() + defaultTopic.slice(1);
+
+    setExtractedTopics((prev) => ({
+      ...prev,
+      [msgId]: {
+        displayTopic: initialDisplayTopic,
+        videoQuery: `${defaultTopic} lecture guide`,
+        newsQuery: `${defaultTopic} research news`,
+        mcqTopic: defaultTopic,
+        loading: true,
+      },
+    }));
+
+    try {
+      const res = await fetch('/api/explore/extract-topic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userQuery: userMsg?.content || '',
+          assistantReply: msgContent,
+          sessionTitle: session?.title || '',
+          personaName: activePersona.name,
+          personaSpecialties: activePersona.specialties || [],
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.displayTopic) {
+          setExtractedTopics((prev) => ({
+            ...prev,
+            [msgId]: {
+              displayTopic: data.displayTopic,
+              videoQuery: data.videoQuery || `${data.displayTopic} lecture`,
+              newsQuery: data.newsQuery || `${data.displayTopic} news`,
+              mcqTopic: data.mcqTopic || data.displayTopic,
+              loading: false,
+            },
+          }));
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to extract AI topic:', err);
+    }
+
+    setExtractedTopics((prev) => ({
+      ...prev,
+      [msgId]: {
+        ...(prev[msgId] || {
+          displayTopic: initialDisplayTopic,
+          videoQuery: defaultTopic,
+          newsQuery: defaultTopic,
+          mcqTopic: defaultTopic,
+        }),
+        loading: false,
+      },
+    }));
+  };
+
+  const toggleExploreSection = (msgId: string, msgContent: string, msgIndex: number) => {
+    setExpandedExploreMsgIds((prev) => {
+      const willBeExpanded = !prev[msgId];
+      if (willBeExpanded) {
+        extractTopicForMessage(msgId, msgContent, msgIndex);
+      } else if (activeExploreMsgId === msgId) {
+        setActiveExploreMsgId(null);
+        setActiveExploreTab(null);
+      }
+      return { ...prev, [msgId]: willBeExpanded };
+    });
+  };
+
   const handleToggleExploreTab = (msgId: string, tab: 'videos' | 'news' | 'mcqs') => {
     if (activeExploreMsgId === msgId && activeExploreTab === tab) {
       setActiveExploreMsgId(null);
@@ -284,64 +394,77 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   const currentTopic = session?.title && session.title !== 'New Consultation' ? session.title : 'this topic';
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0 bg-white dark:bg-slate-950 overflow-hidden relative">
-      {/* 1. TOP HEADER BAR */}
-      <header className="h-14 px-3 sm:px-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center justify-between shrink-0 z-10 gap-2">
-        {/* Left Section: Sidebar Toggle & Active Persona Badge */}
+    <div className="flex-1 flex flex-col h-full min-w-0 bg-[#efeae2] dark:bg-[#0b141a] overflow-hidden relative selection:bg-[#00a884]/20 selection:text-[#005c4b] dark:selection:text-[#00a884]">
+      {/* WhatsApp Doodle Pattern Subtle Background Overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-[0.04] dark:opacity-[0.025] bg-[radial-gradient(#00a884_1px,transparent_1px)] [background-size:16px_16px]"
+        aria-hidden="true"
+      />
+
+      {/* 1. TOP WHATSAPP HEADER BAR */}
+      <header className="h-15 px-3 sm:px-4 border-b border-[#e9edef] dark:border-[#2a3942] bg-[#f0f2f5] dark:bg-[#202c33] shadow-xs flex items-center justify-between shrink-0 z-10 gap-2">
+        {/* Left Section: Back/Sidebar Toggle & Active Group Profile */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {!isLeftPanelOpen && (
             <button
               onClick={onToggleLeftPanel}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              title="Open Chat History"
+              className="p-1.5 rounded-full text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
+              title="Open Chat Sessions"
             >
-              <PanelLeft className="w-4 h-4" />
+              <PanelLeft className="w-5 h-5" />
             </button>
           )}
 
-          {/* Active Persona Pill */}
-          <div className="flex items-center gap-2 min-w-0">
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[11px] font-bold shrink-0 shadow-2xs"
-              style={{ backgroundColor: activePersona.avatar_color }}
-            >
-              {activePersona.initials}
+          {/* WhatsApp Group / Contact Profile Pill */}
+          <div className="flex items-center gap-2.5 min-w-0 cursor-default">
+            <div className="relative">
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-xs border border-white/20"
+                style={{ backgroundColor: activePersona.avatar_color || '#00a884' }}
+              >
+                {activePersona.initials}
+              </div>
+              {/* Online Green Indicator Dot */}
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#25D366] border-2 border-[#f0f2f5] dark:border-[#202c33]" />
             </div>
 
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                <span className="text-sm font-bold text-[#111b21] dark:text-[#e9edef] truncate">
                   {activePersona.name}
                 </span>
                 <span
-                  className="hidden md:inline-block text-[9px] font-bold px-1.5 py-0.2 rounded border"
+                  className="hidden md:inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-full border"
                   style={{
-                    color: activePersona.avatar_color,
-                    borderColor: `${activePersona.avatar_color}40`,
-                    backgroundColor: `${activePersona.avatar_color}10`,
+                    color: activePersona.avatar_color || '#00a884',
+                    borderColor: `${activePersona.avatar_color || '#00a884'}40`,
+                    backgroundColor: `${activePersona.avatar_color || '#00a884'}15`,
                   }}
                 >
-                  {activePersona.badge}
+                  {activePersona.badge || 'Academic Mentor'}
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 truncate">
-                {activePersona.role}
-              </span>
+              <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                <span className="text-[#00a884] dark:text-[#25d366] font-semibold">online</span>
+                <span>•</span>
+                <span className="truncate">{isLoading ? 'typing...' : activePersona.role}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Center/Right Section: Mode Tabs & Actions */}
+        {/* Center/Right Section: WhatsApp Style Mode Tabs & Quick Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Mode Switcher Tabs */}
-          <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
+          <div className="flex items-center p-0.5 rounded-xl bg-slate-200/70 dark:bg-[#111b21] border border-slate-300/60 dark:border-[#2a3942] text-xs">
             <button
               onClick={() => handleModeChange('concept')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeMode === 'concept'
-                  ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-white dark:bg-[#202c33] text-[#00a884] dark:text-[#25d366] shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
+              title="Concept Mode: Deep Intuition & Derivations"
             >
               <Lightbulb className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Concept</span>
@@ -351,9 +474,10 @@ export const ChatStage: React.FC<ChatStageProps> = ({
               onClick={() => handleModeChange('exam')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeMode === 'exam'
-                  ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-300 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-white dark:bg-[#202c33] text-amber-600 dark:text-amber-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
+              title="Exam Mode: Practice Problems & Marking Rubrics"
             >
               <GraduationCap className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Exam</span>
@@ -363,23 +487,24 @@ export const ChatStage: React.FC<ChatStageProps> = ({
               onClick={() => handleModeChange('research')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeMode === 'research'
-                  ? 'bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-300 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-white dark:bg-[#202c33] text-cyan-600 dark:text-cyan-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
+              title="Research Mode: Literature, Citations & Deep Dives"
             >
               <BookOpen className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Research</span>
             </button>
           </div>
 
-          {/* Quick Tools: MCQ Quiz, Multi-Level Definition, Knowledge Graph */}
-          <div className="hidden lg:flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-2">
+          {/* Quick Tools: MCQ Quiz, Rigor Definitions, Knowledge Graph */}
+          <div className="hidden lg:flex items-center gap-1 border-l border-slate-300 dark:border-[#2a3942] pl-2">
             <button
               onClick={() => setShowMCQCard(!showMCQCard)}
               className={`p-1.5 px-2 rounded-lg border transition-colors flex items-center gap-1 text-xs font-semibold cursor-pointer ${
                 showMCQCard
-                  ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300 shadow-2xs'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'bg-amber-100/70 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300 shadow-2xs'
+                  : 'bg-white/80 dark:bg-[#202c33] border-slate-300 dark:border-[#2a3942] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#2a3942]'
               }`}
               title="Toggle Interactive MCQ Quiz"
             >
@@ -391,19 +516,19 @@ export const ChatStage: React.FC<ChatStageProps> = ({
               onClick={() => setShowDefinitionCard(!showDefinitionCard)}
               className={`p-1.5 px-2 rounded-lg border transition-colors flex items-center gap-1 text-xs font-semibold cursor-pointer ${
                 showDefinitionCard
-                  ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 shadow-2xs'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'bg-[#00a884]/15 border-[#00a884]/40 text-[#00a884] dark:text-[#25d366] shadow-2xs'
+                  : 'bg-white/80 dark:bg-[#202c33] border-slate-300 dark:border-[#2a3942] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#2a3942]'
               }`}
               title="Toggle Multi-Level Rigorous Definitions"
             >
-              <Layers className="w-3.5 h-3.5 text-indigo-500" />
+              <Layers className="w-3.5 h-3.5 text-[#00a884]" />
               <span className="text-[11px]">Rigor</span>
             </button>
 
             {onOpenKnowledgeGraph && (
               <button
                 onClick={onOpenKnowledgeGraph}
-                className="p-1.5 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 text-xs font-semibold cursor-pointer"
+                className="p-1.5 px-2 rounded-lg border border-slate-300 dark:border-[#2a3942] bg-white/80 dark:bg-[#202c33] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#2a3942] transition-colors flex items-center gap-1 text-xs font-semibold cursor-pointer"
                 title="Open Interactive Knowledge Graph"
               >
                 <Network className="w-3.5 h-3.5 text-purple-500" />
@@ -417,8 +542,8 @@ export const ChatStage: React.FC<ChatStageProps> = ({
             onClick={() => setIsSpecsOpen(!isSpecsOpen)}
             className={`p-1.5 rounded-lg border transition-colors flex items-center gap-1 text-xs font-semibold cursor-pointer ${
               isSpecsOpen
-                ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                ? 'bg-[#00a884]/15 border-[#00a884]/40 text-[#00a884] dark:text-[#25d366]'
+                : 'bg-white/80 dark:bg-[#202c33] border-slate-300 dark:border-[#2a3942] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#2a3942]'
             }`}
             title="Toggle Mode Filters & Specifications"
           >
@@ -431,10 +556,10 @@ export const ChatStage: React.FC<ChatStageProps> = ({
             onClick={onOpenPaywall}
             className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
               queryUsage.tier === 'paid'
-                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                 : queryUsage.remaining <= 1
-                ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 animate-pulse'
-                : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:border-indigo-400'
+                ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse'
+                : 'bg-white/90 dark:bg-[#202c33] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-[#2a3942] hover:border-[#00a884]'
             }`}
           >
             <Zap className="w-3 h-3 text-amber-500" />
@@ -446,10 +571,10 @@ export const ChatStage: React.FC<ChatStageProps> = ({
           {!isRightPanelOpen && (
             <button
               onClick={onToggleRightPanel}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              title="Open Personas"
+              className="p-1.5 rounded-full text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
+              title="Open Personas & Mentors"
             >
-              <PanelRight className="w-4 h-4" />
+              <PanelRight className="w-5 h-5" />
             </button>
           )}
         </div>
@@ -464,13 +589,13 @@ export const ChatStage: React.FC<ChatStageProps> = ({
         onToggle={() => setIsSpecsOpen(!isSpecsOpen)}
       />
 
-      {/* 3. MESSAGES STREAM */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+      {/* 3. MESSAGES STREAM (WHATSAPP GROUP CHAT STYLING) */}
+      <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4 relative z-0">
         {/* Toggleable MCQ Quiz Card */}
         {showMCQCard && (
           <div className="max-w-3xl mx-auto w-full">
             <MCQCard
-              topic={session?.title || 'Quantum Mechanics'}
+              topic={session?.title || 'Core Fundamentals'}
               onSaveToNotes={onSaveToNotes}
               onClose={() => setShowMCQCard(false)}
             />
@@ -487,50 +612,34 @@ export const ChatStage: React.FC<ChatStageProps> = ({
             >
               ✕
             </button>
-            <MultiLevelDefinitionCard topic={session?.title || 'Quantum Mechanics'} />
+            <MultiLevelDefinitionCard topic={session?.title || 'Core Fundamentals'} />
           </div>
         )}
 
+        {/* WhatsApp Centered Date Separator Pill */}
+        <div className="flex justify-center my-2">
+          <div className="bg-white/90 dark:bg-[#182229]/95 text-slate-600 dark:text-slate-400 text-[11px] font-semibold px-3 py-1 rounded-lg shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] dark:shadow-[0_1px_0.5px_rgba(11,20,26,0.3)] uppercase tracking-wider">
+            TODAY • {activePersona.name} Group
+          </div>
+        </div>
+
+        {/* Initial Group Welcome Card if brand new chat */}
         {(!session || session.messages.length <= 1) && (
-          <div className="max-w-2xl mx-auto py-6 space-y-6 animate-in fade-in duration-300">
-            {/* Persona Hero Greeting */}
-            <div className="text-center space-y-3">
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-xl font-black mx-auto shadow-md"
-                style={{ backgroundColor: activePersona.avatar_color }}
-              >
-                {activePersona.initials}
+          <div className="max-w-xl mx-auto py-4 space-y-4 animate-in fade-in duration-300">
+            {/* WhatsApp System Encryption / Encryption Style Banner */}
+            <div className="bg-[#ffeecd] dark:bg-[#182229] border border-[#f5c369]/40 dark:border-[#2a3942] rounded-xl p-3 text-center text-xs text-[#54656f] dark:text-[#8696a0] shadow-xs space-y-1">
+              <div className="font-bold text-[#111b21] dark:text-[#e9edef] flex items-center justify-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Bilingual Conversational & Academic Mentorship</span>
               </div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-                Consult {activePersona.name}
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-lg mx-auto leading-relaxed">
-                {activePersona.description}
+              <p className="text-[11px] leading-relaxed">
+                Messages with <strong>{activePersona.name}</strong> support instant queries in English or Roman Urdu / Hinglish. Ask study concepts, exam questions, or everyday problems.
               </p>
             </div>
-
-            {/* Mode Guide Pill */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                {activeMode === 'concept' && <Lightbulb className="w-4 h-4 text-indigo-500" />}
-                {activeMode === 'exam' && <GraduationCap className="w-4 h-4 text-amber-500" />}
-                {activeMode === 'research' && <BookOpen className="w-4 h-4 text-cyan-500" />}
-                <span className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wide text-[10px]">
-                  Current Mode: {activeMode}
-                </span>
-              </div>
-              <span className="text-[11px] text-slate-400">
-                {activeMode === 'concept'
-                  ? 'Deep analogies & LaTeX derivations'
-                  : activeMode === 'exam'
-                  ? 'Past papers, grading & trap analysis'
-                  : 'arXiv papers, OpenAlex & GitHub tools'}
-              </span>
-            </div>
           </div>
         )}
 
-        {/* Render Messages */}
+        {/* Render WhatsApp Message Bubbles */}
         {session?.messages.map((msg, idx) => {
           const isAssistant = msg.role === 'assistant';
           const isLatestTurnStart = idx === Math.max(0, (session?.messages.length || 0) - (isLoading ? 1 : 2));
@@ -544,46 +653,52 @@ export const ChatStage: React.FC<ChatStageProps> = ({
               ref={isLatestTurnStart ? latestTurnRef : null}
               className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} max-w-3xl mx-auto w-full`}
             >
-              {/* Message Header */}
-              <div className="flex items-center gap-2 mb-1.5 px-1 text-[11px] text-slate-400">
-                {isAssistant && msgPersona && (
-                  <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
-                    <div
-                      className="w-4 h-4 rounded-md flex items-center justify-center text-white text-[8px] font-bold"
-                      style={{ backgroundColor: msgPersona.avatar_color }}
-                    >
-                      {msgPersona.initials}
-                    </div>
-                    <span>{msgPersona.name}</span>
-                    {msg.mode && (
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase font-semibold">
-                        {msg.mode}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {!isAssistant && <span className="font-semibold text-slate-600 dark:text-slate-300">You</span>}
-                <span>·</span>
-                <span>{msg.timestamp}</span>
-              </div>
-
-              {/* Message Bubble */}
+              {/* WhatsApp Message Bubble Container */}
               <div
-                className={`relative rounded-2xl p-4 sm:p-5 text-sm transition-all shadow-xs ${
+                className={`relative px-4 py-3 text-sm transition-all shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] dark:shadow-[0_1px_0.5px_rgba(11,20,26,0.3)] ${
                   isAssistant
-                    ? 'w-full bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-200'
-                    : 'bg-indigo-600 text-white font-medium max-w-[85%] rounded-tr-xs'
+                    ? 'w-full bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-2xl rounded-tl-xs border border-black/5 dark:border-white/5'
+                    : 'bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] font-normal max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tr-xs'
                 }`}
               >
-                {/* Content */}
+                {/* Assistant Group Participant Header */}
+                {isAssistant && msgPersona && (
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-[#2a3942]/60">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold"
+                        style={{ backgroundColor: msgPersona.avatar_color || '#00a884' }}
+                      >
+                        {msgPersona.initials}
+                      </div>
+                      <span
+                        className="font-bold text-xs"
+                        style={{ color: msgPersona.avatar_color || '#00a884' }}
+                      >
+                        ~ {msgPersona.name}
+                      </span>
+                      {msg.mode && (
+                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-[#111b21] text-slate-500 dark:text-slate-400 font-semibold uppercase">
+                          {msg.mode}
+                        </span>
+                      )}
+                    </div>
+
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                      {msg.timestamp}
+                    </span>
+                  </div>
+                )}
+
+                {/* Bubble Content Body */}
                 {isAssistant ? (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <MarkdownRenderer content={msg.content} />
 
-                    {/* Interactive Multi-Level Explanation Pills if available */}
+                    {/* Interactive Multi-Level Explanation Switcher if present */}
                     {msg.metadata?.multiLevel && (
-                      <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#2a3942] space-y-2">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400">
                           Rigor Level Switcher
                         </div>
                         <div className="flex flex-wrap gap-1">
@@ -591,10 +706,10 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                             <button
                               key={lvl}
                               onClick={() => setLevelTab(msg.id, lvl)}
-                              className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase transition-colors ${
+                              className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase transition-colors cursor-pointer ${
                                 (activeLevelTabs[msg.id] || 'undergrad') === lvl
-                                  ? 'bg-indigo-600 text-white shadow-2xs'
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                                  ? 'bg-[#00a884] text-white shadow-2xs'
+                                  : 'bg-slate-100 dark:bg-[#111b21] text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-[#2a3942]'
                               }`}
                             >
                               {lvl === 'eli5' ? 'ELI5' : lvl === 'highSchool' ? 'High School' : lvl === 'undergrad' ? 'Undergraduate' : 'PhD / Rigorous'}
@@ -602,16 +717,16 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                           ))}
                         </div>
                         {msg.metadata.multiLevel[activeLevelTabs[msg.id] || 'undergrad'] && (
-                          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs">
+                          <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#111b21]/70 border border-slate-200/80 dark:border-[#2a3942] text-xs">
                             <MarkdownRenderer content={msg.metadata.multiLevel[activeLevelTabs[msg.id] || 'undergrad']!} />
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Interactive Exam Question Reveal Box if available */}
+                    {/* Interactive Exam Question Solution Reveal Box */}
                     {msg.metadata?.examQuestion && (
-                      <div className="mt-4 p-4 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-3">
+                      <div className="mt-3 p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 space-y-2.5">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 font-bold text-xs text-amber-800 dark:text-amber-300">
                             <GraduationCap className="w-4 h-4" />
@@ -630,8 +745,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                           </div>
                         )}
 
-                        {/* Reveal Solution Button */}
-                        <div className="pt-2">
+                        <div className="pt-1">
                           <button
                             onClick={() => toggleSolutionReveal(msg.id)}
                             className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -641,7 +755,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                           </button>
 
                           {revealedSolutions[msg.id] && msg.metadata.examQuestion.solution && (
-                            <div className="mt-3 p-3 rounded-lg bg-white dark:bg-slate-900 border border-amber-300/60 dark:border-amber-800 text-xs animate-in fade-in">
+                            <div className="mt-2.5 p-3 rounded-lg bg-white dark:bg-[#111b21] border border-amber-300/60 dark:border-amber-800 text-xs animate-in fade-in">
                               <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mb-1 uppercase">
                                 Model Answer & Derivation
                               </div>
@@ -652,23 +766,23 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                       </div>
                     )}
 
-                    {/* Research Papers Cards if available */}
+                    {/* Cited Literature & Papers */}
                     {msg.metadata?.papers && msg.metadata.papers.length > 0 && (
-                      <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#2a3942] space-y-2">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400">
                           Cited Literature & Papers
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {msg.metadata.papers.map((paper, pIdx) => (
                             <div
                               key={pIdx}
-                              className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-xs space-y-1"
+                              className="p-2.5 rounded-lg bg-slate-50 dark:bg-[#111b21]/60 border border-slate-200/80 dark:border-[#2a3942] text-xs space-y-1"
                             >
                               <a
                                 href={paper.url || '#'}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="font-bold text-slate-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 flex items-start justify-between gap-1"
+                                className="font-bold text-slate-900 dark:text-white hover:text-[#00a884] dark:hover:text-[#25d366] flex items-start justify-between gap-1"
                               >
                                 <span className="line-clamp-2">{paper.title}</span>
                                 <ExternalLink className="w-3 h-3 shrink-0 text-slate-400" />
@@ -685,132 +799,208 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                       </div>
                     )}
 
-                    {/* EXPLORE MORE FOOTER CARDS AT THE END OF EVERY ASSISTANT MESSAGE */}
-                    <div className="mt-5 pt-4 border-t border-slate-200/80 dark:border-slate-800 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                          <Compass className="w-3.5 h-3.5 text-indigo-500" />
-                          <span>Explore More</span>
-                        </div>
-                        <span className="text-[10px] text-slate-400">Deepen your understanding</span>
-                      </div>
+                    {/* EXPLORE MORE INTERACTIVE WHATSAPP-STYLE ATTACHMENT CARD */}
+                    {(() => {
+                      const msgTopicData = extractedTopics[msg.id];
+                      const targetTopic = msgTopicData?.displayTopic || currentTopic;
+                      const targetVideoQuery = msgTopicData?.videoQuery || targetTopic;
+                      const targetNewsQuery = msgTopicData?.newsQuery || targetTopic;
+                      const targetMcqTopic = msgTopicData?.mcqTopic || targetTopic;
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {/* 1. Video Guide (YouTube Data API endpoint) */}
-                        <button
-                          onClick={() => handleToggleExploreTab(msg.id, 'videos')}
-                          className={`p-3 rounded-xl border text-left transition-all group cursor-pointer space-y-1 ${
-                            activeExploreMsgId === msg.id && activeExploreTab === 'videos'
-                              ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40'
-                              : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-rose-600 dark:group-hover:text-rose-400 flex items-center gap-1.5">
-                              <Play className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-                              Video Guides
-                            </span>
-                            <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-rose-500" />
-                          </div>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
-                            YouTube lectures & video guides
-                          </p>
-                        </button>
-
-                        {/* 2. Recent News */}
-                        <button
-                          onClick={() => handleToggleExploreTab(msg.id, 'news')}
-                          className={`p-3 rounded-xl border text-left transition-all group cursor-pointer space-y-1 ${
-                            activeExploreMsgId === msg.id && activeExploreTab === 'news'
-                              ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40'
-                              : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-center gap-1.5">
-                              <Newspaper className="w-3.5 h-3.5 text-blue-500" />
-                              Recent News
-                            </span>
-                            <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
-                          </div>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
-                            Latest research & news updates
-                          </p>
-                        </button>
-
-                        {/* 3. Practice MCQs ("Test your grip on that topic") */}
-                        <button
-                          onClick={() => handleToggleExploreTab(msg.id, 'mcqs')}
-                          className={`p-3 rounded-xl border text-left transition-all group cursor-pointer space-y-1 ${
-                            activeExploreMsgId === msg.id && activeExploreTab === 'mcqs'
-                              ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40'
-                              : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-600 dark:group-hover:text-amber-400 flex items-center gap-1.5">
-                              <GraduationCap className="w-3.5 h-3.5 text-amber-500" />
-                              Test Your Grip
-                            </span>
-                            <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-amber-500" />
-                          </div>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
-                            Practice MCQs & interactive quiz
-                          </p>
-                        </button>
-                      </div>
-
-                      {/* Expanded Section Drawer for Active Explore Card */}
-                      {activeExploreMsgId === msg.id && activeExploreTab && (
-                        <div className="mt-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3 relative animate-in fade-in duration-200">
+                      return (
+                        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#2a3942]">
+                          {/* Minimalist Explore Toggle Bar */}
                           <button
-                            onClick={() => { setActiveExploreMsgId(null); setActiveExploreTab(null); }}
-                            className="absolute top-3 right-3 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer text-xs font-bold"
-                            title="Close drawer"
+                            onClick={() => toggleExploreSection(msg.id, msg.content, idx)}
+                            aria-expanded={!!expandedExploreMsgIds[msg.id]}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all cursor-pointer group text-left ${
+                              expandedExploreMsgIds[msg.id]
+                                ? 'bg-[#00a884]/10 border-[#00a884]/30 dark:bg-[#00a884]/15 dark:border-[#00a884]/40'
+                                : 'bg-slate-50/90 dark:bg-[#111b21]/70 border-slate-200/80 dark:border-[#2a3942] hover:bg-slate-100/90 dark:hover:bg-[#111b21]'
+                            }`}
                           >
-                            ✕
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                                  expandedExploreMsgIds[msg.id]
+                                    ? 'bg-[#00a884] text-white'
+                                    : 'bg-slate-200 dark:bg-[#2a3942] text-slate-600 dark:text-slate-300 group-hover:bg-[#00a884]/20 group-hover:text-[#00a884]'
+                                }`}
+                              >
+                                <Compass className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-[#00a884] dark:group-hover:text-[#25d366] transition-colors">
+                                  Explore More
+                                </span>
+                                <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                                  <span>•</span>
+                                  {msgTopicData?.displayTopic ? (
+                                    <span className="font-semibold text-[#00a884] dark:text-[#25d366] truncate max-w-[200px]">
+                                      {msgTopicData.displayTopic}
+                                    </span>
+                                  ) : (
+                                    <span>Video Guides, Recent News & MCQs</span>
+                                  )}
+                                  {msgTopicData?.loading && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#00a884] animate-pulse" title="AI extracting topic..." />
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] font-semibold text-slate-400 group-hover:text-[#00a884] transition-colors">
+                                {expandedExploreMsgIds[msg.id] ? 'Hide' : 'Open'}
+                              </span>
+                              <div
+                                className={`p-0.5 rounded transition-transform duration-200 ${
+                                  expandedExploreMsgIds[msg.id]
+                                    ? 'rotate-180 text-[#00a884]'
+                                    : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                                }`}
+                              >
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </div>
+                            </div>
                           </button>
 
-                          {activeExploreTab === 'videos' && (
-                            <ExploreVideosSection topic={currentTopic} />
-                          )}
+                          {/* Expanded Content Drawer */}
+                          {expandedExploreMsgIds[msg.id] && (
+                            <div className="mt-2.5 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                {/* 1. Video Guide */}
+                                <button
+                                  onClick={() => handleToggleExploreTab(msg.id, 'videos')}
+                                  className={`p-2.5 rounded-xl border text-left transition-all group cursor-pointer space-y-1 ${
+                                    activeExploreMsgId === msg.id && activeExploreTab === 'videos'
+                                      ? 'border-[#00a884] bg-[#00a884]/10 dark:bg-[#00a884]/20'
+                                      : 'border-slate-200/80 dark:border-[#2a3942] bg-slate-50 dark:bg-[#111b21] hover:bg-slate-100 dark:hover:bg-[#202c33]'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-rose-600 dark:group-hover:text-rose-400 flex items-center gap-1.5">
+                                      <Play className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
+                                      Video Guides
+                                    </span>
+                                    <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-rose-500" />
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                                    YouTube lecture guides
+                                  </p>
+                                </button>
 
-                          {activeExploreTab === 'news' && (
-                            <ExploreNewsSection topic={currentTopic} />
-                          )}
+                                {/* 2. Recent News */}
+                                <button
+                                  onClick={() => handleToggleExploreTab(msg.id, 'news')}
+                                  className={`p-2.5 rounded-xl border text-left transition-all group cursor-pointer space-y-1 ${
+                                    activeExploreMsgId === msg.id && activeExploreTab === 'news'
+                                      ? 'border-[#00a884] bg-[#00a884]/10 dark:bg-[#00a884]/20'
+                                      : 'border-slate-200/80 dark:border-[#2a3942] bg-slate-50 dark:bg-[#111b21] hover:bg-slate-100 dark:hover:bg-[#202c33]'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-center gap-1.5">
+                                      <Newspaper className="w-3.5 h-3.5 text-blue-500" />
+                                      Recent News
+                                    </span>
+                                    <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                                    Articles & research updates
+                                  </p>
+                                </button>
 
-                          {activeExploreTab === 'mcqs' && (
-                            <MCQCard
-                              topic={currentTopic}
-                              onSaveToNotes={onSaveToNotes}
-                              onClose={() => { setActiveExploreMsgId(null); setActiveExploreTab(null); }}
-                            />
+                                {/* 3. Practice MCQs ("Test your grip") */}
+                                <button
+                                  onClick={() => handleToggleExploreTab(msg.id, 'mcqs')}
+                                  className={`p-2.5 rounded-xl border text-left transition-all group cursor-pointer space-y-1 ${
+                                    activeExploreMsgId === msg.id && activeExploreTab === 'mcqs'
+                                      ? 'border-[#00a884] bg-[#00a884]/10 dark:bg-[#00a884]/20'
+                                      : 'border-slate-200/80 dark:border-[#2a3942] bg-slate-50 dark:bg-[#111b21] hover:bg-slate-100 dark:hover:bg-[#202c33]'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-600 dark:group-hover:text-amber-400 flex items-center gap-1.5">
+                                      <GraduationCap className="w-3.5 h-3.5 text-amber-500" />
+                                      Test Your Grip
+                                    </span>
+                                    <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-amber-500" />
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                                    Interactive practice MCQs
+                                  </p>
+                                </button>
+                              </div>
+
+                              {/* Section Details Drawer */}
+                              {activeExploreMsgId === msg.id && activeExploreTab && (
+                                <div className="mt-2 p-3.5 rounded-xl bg-white dark:bg-[#111b21] border border-slate-200/80 dark:border-[#2a3942] space-y-2.5 relative animate-in fade-in duration-200 shadow-xs">
+                                  <button
+                                    onClick={() => {
+                                      setActiveExploreMsgId(null);
+                                      setActiveExploreTab(null);
+                                    }}
+                                    className="absolute top-2.5 right-2.5 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#202c33] transition-colors cursor-pointer text-xs font-bold"
+                                    title="Close drawer"
+                                  >
+                                    ✕
+                                  </button>
+
+                                  {activeExploreTab === 'videos' && (
+                                    <ExploreVideosSection topic={targetTopic} query={targetVideoQuery} />
+                                  )}
+
+                                  {activeExploreTab === 'news' && (
+                                    <ExploreNewsSection topic={targetTopic} query={targetNewsQuery} />
+                                  )}
+
+                                  {activeExploreTab === 'mcqs' && (
+                                    <MCQCard
+                                      topic={targetMcqTopic}
+                                      onSaveToNotes={onSaveToNotes}
+                                      onClose={() => {
+                                        setActiveExploreMsgId(null);
+                                        setActiveExploreTab(null);
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
+                      );
+                    })()}
                   </div>
                 ) : (
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  <div>
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    {/* User Message Timestamp with Double Blue Tick */}
+                    <div className="flex items-center justify-end gap-1 text-[10px] text-[#54656f] dark:text-emerald-200/80 font-medium mt-1">
+                      <span>{msg.timestamp}</span>
+                      <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                    </div>
+                  </div>
                 )}
 
-                {/* Assistant Action Footer */}
+                {/* Minimalist Interactive Message Action Bar */}
                 {isAssistant && (
-                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-[#2a3942]/70 flex items-center justify-between text-xs text-slate-400">
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleCopyMessage(msg.id, msg.content)}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-1 text-[11px]"
-                        title="Copy to clipboard"
+                        className="px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#111b21] hover:text-slate-800 dark:hover:text-slate-200 transition-colors flex items-center gap-1 text-[11px] font-medium cursor-pointer"
+                        title="Copy message to clipboard"
                       >
                         {copiedMsgId === msg.id ? (
                           <>
-                            <Check className="w-3 h-3 text-emerald-500" />
-                            <span className="text-emerald-500 font-semibold">Copied</span>
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            <span className="text-emerald-500 font-bold">Copied</span>
                           </>
                         ) : (
                           <>
-                            <Copy className="w-3 h-3" />
+                            <Copy className="w-3.5 h-3.5" />
                             <span>Copy</span>
                           </>
                         )}
@@ -818,36 +1008,18 @@ export const ChatStage: React.FC<ChatStageProps> = ({
 
                       <button
                         onClick={() => handleSaveNote(msg.id, msg.content)}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1 text-[11px]"
+                        className="px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#111b21] hover:text-[#00a884] dark:hover:text-[#25d366] transition-colors flex items-center gap-1 text-[11px] font-medium cursor-pointer"
                         title="Save to compiled notes"
                       >
                         {savedNotesMsgId === msg.id ? (
                           <>
-                            <Check className="w-3 h-3 text-indigo-500" />
-                            <span className="text-indigo-500 font-semibold">Saved Note</span>
+                            <Check className="w-3.5 h-3.5 text-[#00a884]" />
+                            <span className="text-[#00a884] font-bold">Saved Note ✓</span>
                           </>
                         ) : (
                           <>
-                            <FileText className="w-3 h-3" />
+                            <FileText className="w-3.5 h-3.5" />
                             <span>Save Note</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => handleSaveBookmarkAction(msg.id, msg.content)}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 transition-colors flex items-center gap-1 text-[11px]"
-                        title="Bookmark message"
-                      >
-                        {savedBookmarkMsgId === msg.id ? (
-                          <>
-                            <Check className="w-3 h-3 text-amber-500" />
-                            <span className="text-amber-500 font-semibold">Bookmarked</span>
-                          </>
-                        ) : (
-                          <>
-                            <Bookmark className="w-3 h-3" />
-                            <span>Bookmark</span>
                           </>
                         )}
                       </button>
@@ -856,10 +1028,10 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => onSendMessage(`Regenerate response with greater depth and detailed step-by-step mathematical rigor.`)}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-1 text-[11px]"
+                        className="px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#111b21] hover:text-slate-800 dark:hover:text-slate-200 transition-colors flex items-center gap-1 text-[11px] font-medium cursor-pointer group"
                         title="Regenerate response"
                       >
-                        <RotateCcw className="w-3 h-3" />
+                        <RotateCcw className="w-3.5 h-3.5 group-hover:-rotate-45 transition-transform" />
                         <span className="hidden sm:inline">Regenerate</span>
                       </button>
                     </div>
@@ -870,21 +1042,21 @@ export const ChatStage: React.FC<ChatStageProps> = ({
           );
         })}
 
-        {/* Loading Indicator */}
+        {/* Typing / Synthesis Status Bubble */}
         {isLoading && (
           <div className="flex items-start gap-2 max-w-3xl mx-auto w-full animate-in fade-in">
             <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-bold shrink-0 animate-pulse"
-              style={{ backgroundColor: activePersona.avatar_color }}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0 shadow-xs"
+              style={{ backgroundColor: activePersona.avatar_color || '#00a884' }}
             >
               {activePersona.initials}
             </div>
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" />
-              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.2s]" />
-              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.4s]" />
-              <span className="font-medium text-slate-600 dark:text-slate-300">
-                {activePersona.name} is synthesizing {activeMode} response...
+            <div className="px-4 py-3 rounded-2xl rounded-tl-xs bg-white dark:bg-[#202c33] border border-black/5 dark:border-white/5 shadow-xs text-xs text-slate-500 dark:text-slate-300 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce" />
+              <div className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce [animation-delay:0.2s]" />
+              <div className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce [animation-delay:0.4s]" />
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {activePersona.name} is typing...
               </span>
             </div>
           </div>
@@ -893,13 +1065,13 @@ export const ChatStage: React.FC<ChatStageProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 4. CHAT INPUT STAGE */}
-      <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md shrink-0">
-        <div className="max-w-3xl mx-auto space-y-2">
-          {/* Main Input Box */}
+      {/* 4. WHATSAPP CHAT COMPOSER STAGE */}
+      <div className="p-2 sm:p-3 border-t border-[#e9edef] dark:border-[#2a3942] bg-[#f0f2f5] dark:bg-[#202c33] shadow-md shrink-0 z-10">
+        <div className="max-w-3xl mx-auto flex items-end gap-2">
+          {/* Main Rounded Input Box */}
           <form
             onSubmit={handleSubmit}
-            className="relative flex items-end gap-2 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm focus-within:border-indigo-500 dark:focus-within:border-indigo-400 transition-colors"
+            className="flex-1 flex items-end gap-2 px-3 py-1.5 rounded-3xl bg-white dark:bg-[#2a3942] border border-slate-300/70 dark:border-transparent shadow-xs focus-within:ring-2 focus-within:ring-[#00a884]/30 transition-all"
           >
             {/* Auto-growing Textarea */}
             <textarea
@@ -908,30 +1080,24 @@ export const ChatStage: React.FC<ChatStageProps> = ({
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`Ask ${activePersona.name} (${activeMode} mode)...`}
-              className="flex-1 max-h-44 p-2 bg-transparent text-sm text-slate-900 dark:text-white placeholder:text-slate-400 resize-none focus:outline-none leading-relaxed"
+              placeholder={`Message ${activePersona.name} (English or Roman Urdu / Hinglish)...`}
+              className="flex-1 max-h-36 py-1.5 px-1 bg-transparent text-sm text-[#111b21] dark:text-[#e9edef] placeholder:text-slate-400 dark:placeholder:text-slate-400 resize-none focus:outline-none leading-relaxed"
             />
-
-            {/* Send Button */}
-            <button
-              type="submit"
-              disabled={!inputText.trim() || isLoading}
-              className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white disabled:opacity-30 disabled:pointer-events-none transition-all shrink-0 cursor-pointer shadow-xs"
-              title="Send Message (Enter)"
-            >
-              <Send className="w-4 h-4" />
-            </button>
           </form>
 
-          {/* Bottom Notice / Disclaimer */}
-          <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
-            <span>
-              Bifrost AI combines verified academic literature with persona modeling.
-            </span>
-            <span className="hidden sm:inline">Press Enter to send, Shift+Enter for newline</span>
-          </div>
+          {/* WhatsApp Signature Circular Green Send Button */}
+          <button
+            onClick={handleSubmit}
+            type="button"
+            disabled={!inputText.trim() || isLoading}
+            className="w-11 h-11 rounded-full bg-[#00a884] hover:bg-[#029676] active:scale-95 text-white disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center justify-center shrink-0 shadow-sm cursor-pointer"
+            title="Send Message (Enter)"
+          >
+            <Send className="w-5 h-5 ml-0.5" />
+          </button>
         </div>
       </div>
     </div>
   );
 };
+

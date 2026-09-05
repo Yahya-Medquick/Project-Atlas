@@ -1,17 +1,13 @@
 import React from "react";
 import { SoftwareRepo } from "../../types";
-import { Star, GitFork, ExternalLink, Bookmark, Check, Code } from "lucide-react";
+import { Star, GitFork, ExternalLink, Code } from "lucide-react";
 
 interface SoftwareCardProps {
   repo: SoftwareRepo;
-  onBookmark?: (repo: SoftwareRepo) => void;
-  isBookmarked?: boolean;
 }
 
 export const SoftwareCard: React.FC<SoftwareCardProps> = ({
   repo,
-  onBookmark,
-  isBookmarked = false,
 }) => {
   return (
     <div className="group rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200 flex flex-col justify-between space-y-4">
@@ -77,20 +73,6 @@ export const SoftwareCard: React.FC<SoftwareCardProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {onBookmark && (
-            <button
-              onClick={() => onBookmark(repo)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              title="Save Repo"
-            >
-              {isBookmarked ? (
-                <Check className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <Bookmark className="w-4 h-4" />
-              )}
-            </button>
-          )}
-
           <a
             href={repo.url}
             target="_blank"

@@ -104,14 +104,14 @@ export function useChatSessions() {
   // Create new session
   const createSession = useCallback(
     (
-      personaId: string = 'aris',
+      personaId: string = 'hamza',
       mode: ChatMode = 'concept',
-      initialTopic: string = 'Quantum Physics & Foundations',
+      initialTopic: string = 'General Discussion',
       customTitle?: string,
       variant: 'global' | 'pk' = 'global'
     ): ChatSession => {
       const expertSet = variant === 'pk' ? EXPERTS_PK : EXPERTS;
-      const persona = expertSet[personaId] || expertSet['aris'] || Object.values(expertSet)[0];
+      const persona = expertSet[personaId] || expertSet['hamza'] || Object.values(expertSet)[0];
       const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const now = new Date().toISOString();
 

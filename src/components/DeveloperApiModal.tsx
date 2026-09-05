@@ -68,7 +68,7 @@ export const DeveloperApiModal: React.FC<DeveloperApiModalProps> = ({ isOpen, on
       parameters: [],
       exampleResponse: `{
   "status": "healthy",
-  "engine": "Bifrost AI Universal Knowledge Engine v2.5",
+  "engine": "G-AGE AI Universal Knowledge Engine v2.5",
   "memoryUsageMb": 42.1
 }`
     }
@@ -94,7 +94,7 @@ export const DeveloperApiModal: React.FC<DeveloperApiModalProps> = ({ isOpen, on
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                Bifrost AI Public REST API v1
+                G-AGE AI Public REST API v1
               </h2>
               <p className="text-xs text-slate-500">Developer documentation, endpoints, and cURL snippets</p>
             </div>
@@ -113,7 +113,7 @@ export const DeveloperApiModal: React.FC<DeveloperApiModalProps> = ({ isOpen, on
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
             <span>
-              Authentication Required: Pass <code className="bg-purple-200/80 dark:bg-purple-900 px-1.5 py-0.5 rounded font-mono font-bold">Authorization: Bearer bifrost_live_...</code> on all <code className="font-mono">/api/v1/*</code> endpoints.
+              Authentication Required: Pass <code className="bg-purple-200/80 dark:bg-purple-900 px-1.5 py-0.5 rounded font-mono font-bold">Authorization: Bearer gage_live_...</code> on all <code className="font-mono">/api/v1/*</code> endpoints.
             </span>
           </div>
           <span className="font-mono text-[10px] bg-purple-200 dark:bg-purple-900 px-2 py-0.5 rounded font-bold shrink-0">

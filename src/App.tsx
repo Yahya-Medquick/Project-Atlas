@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense, useCallback, useRef } from 'react';
 import { Check } from 'lucide-react';
 import { useTheme } from './hooks/useTheme';
-import { useBookmarks } from './hooks/useBookmarks';
 import { useNotes } from './hooks/useNotes';
 import { useUser } from './context/UserContext';
 import { useChatSessions } from './hooks/useChatSessions';
@@ -20,9 +19,6 @@ import { usePersonas } from './hooks/usePersonas';
 import { ChatMode, ChatMessage } from './types/chat';
 
 // Lazy-loaded secondary modals for optimal performance
-const BookmarksModal = lazy(() =>
-  import('./components/BookmarksModal').then((m) => ({ default: m.BookmarksModal }))
-);
 const AdminDashboardModal = lazy(() =>
   import('./components/AdminDashboardModal').then((m) => ({ default: m.AdminDashboardModal }))
 );
@@ -47,7 +43,6 @@ const KnowledgeGraphModal = lazy(() =>
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
-  const { bookmarks, addBookmark, removeBookmark, isBookmarked } = useBookmarks();
   const { notes, addNote } = useNotes();
   const { user, isLoggedIn } = useUser();
 
@@ -94,7 +89,6 @@ export default function App() {
 
   // Modals state
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
-  const [isBookmarksOpen, setIsBookmarksOpen] = useState<boolean>(false);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
   const [isCompareOpen, setIsCompareOpen] = useState<boolean>(false);
@@ -114,9 +108,9 @@ export default function App() {
   // Selected persona resolution
   const { globalExperts, pkExperts } = usePersonas();
   const activeExpertSet = expertVariant === 'pk' ? pkExperts : globalExperts;
-  const currentPersonaId = activeSession?.personaId || 'aris';
+  const currentPersonaId = activeSession?.personaId || 'hamza';
   const activePersona: ExpertPersona =
-    activeExpertSet[currentPersonaId] || activeExpertSet['aris'] || Object.values(activeExpertSet)[0];
+    activeExpertSet[currentPersonaId] || activeExpertSet['hamza'] || Object.values(activeExpertSet)[0];
 
   // Best domain match persona suggestion
   const suggestedPersona = useMemo(() => {
@@ -172,8 +166,8 @@ export default function App() {
     }
 
     if (sessions.length === 0) {
-      const initialPersonaId = urlPersona || 'aris';
-      createSession(initialPersonaId, urlMode, 'Quantum Physics & AI Foundations', 'Quantum Physics & AI Foundations', expertVariant);
+      const initialPersonaId = urlPersona || 'hamza';
+      createSession(initialPersonaId, urlMode, 'General Discussion', 'General Discussion', expertVariant);
     } else if (!activeSessionId) {
       selectSession(sessions[0].id);
     }
@@ -185,7 +179,8 @@ export default function App() {
       const personaKey = activePersona.slug || activePersona.id;
       const currentUrl = new URL(window.location.href);
       if (currentUrl.searchParams.get('persona') !== personaKey) {
-        history.replaceState(null, '', `/?persona=${personaKey}`);
+        currentUrl.searchParams.set('persona', personaKey);
+        window.history.replaceState(null, '', `${currentUrl.pathname}?${currentUrl.searchParams.toString()}`);
       }
     }
   }, [activePersona?.id, activePersona?.slug]);
@@ -206,7 +201,7 @@ export default function App() {
 
   // Create new chat
   const handleNewChat = useCallback(() => {
-    createSession('aris', 'concept', 'Explore Topic', 'New Chat', expertVariant);
+    createSession('hamza', 'concept', 'General Discussion', 'New Chat', expertVariant);
     if (window.innerWidth < 1024) {
       setIsLeftPanelOpen(false);
     }
@@ -228,10 +223,10 @@ export default function App() {
   const handleSelectPersona = useCallback(
     (personaId: string, variant: 'global' | 'pk') => {
       setExpertVariant(variant);
-      if (activeSession) {
+      if (activeSessionId) {
         const expertSet = variant === 'pk' ? pkExperts : globalExperts;
         const persona = expertSet[personaId] || Object.values(expertSet)[0];
-        updateSessionMeta(activeSession.id, {
+        updateSessionMeta(activeSessionId, {
           personaId: persona.id,
           variant,
         });
@@ -240,7 +235,7 @@ export default function App() {
         setIsRightPanelOpen(false);
       }
     },
-    [activeSession, updateSessionMeta]
+    [activeSessionId, pkExperts, globalExperts, updateSessionMeta]
   );
 
   // Send message handler (invokes /api/chat/message with mode, specs, and persona prompt)
@@ -252,7 +247,7 @@ export default function App() {
       return;
     }
 
-    const currentSession = activeSession || createSession('aris', 'concept', content.slice(0, 32));
+    const currentSession = activeSession || createSession('hamza', 'concept', content.slice(0, 32));
     const targetMode = modeOverride || currentSession.mode || 'concept';
 
     const userMessage: ChatMessage = {
@@ -346,17 +341,6 @@ export default function App() {
     setSaveNoteToast(true);
   };
 
-  // Save to Bookmarks callback
-  const handleSaveBookmark = (title: string, category: any, url?: string, description?: string) => {
-    addBookmark({
-      topic: activeSession?.title || 'Knowledge',
-      title,
-      category: category || 'overview',
-      url: url || window.location.href,
-      description: description || '',
-    });
-  };
-
   return (
     <div className="h-screen w-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex overflow-hidden font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-200">
       {/* 1. LEFT PANEL: CHAT HISTORY SIDEBAR */}
@@ -373,8 +357,6 @@ export default function App() {
         onRenameSession={renameSession}
         onDeleteSession={deleteSession}
         onPinSession={togglePinSession}
-        onOpenBookmarks={() => setIsBookmarksOpen(true)}
-        bookmarksCount={bookmarks.length}
         onOpenNotes={() => {
           setIsNotesOpen(true);
           setSavedNotesCount(0);
@@ -403,7 +385,6 @@ export default function App() {
         isRightPanelOpen={isRightPanelOpen}
         onUpdateSessionMeta={updateSessionMeta}
         onSaveToNotes={handleSaveToNotes}
-        onSaveBookmark={handleSaveBookmark}
         onOpenPaywall={triggerPaywall}
         onOpenKnowledgeGraph={() => setIsKnowledgeGraphOpen(true)}
         queryUsage={usage}
@@ -473,17 +454,6 @@ export default function App() {
           subjectTags={compiledNotesModalState.subjectTags}
         />
 
-        <BookmarksModal
-          isOpen={isBookmarksOpen}
-          onClose={() => setIsBookmarksOpen(false)}
-          bookmarks={bookmarks}
-          onRemove={removeBookmark}
-          onSelectTopic={(topic) => {
-            setIsBookmarksOpen(false);
-            createSession(currentPersonaId, 'concept', topic, topic, expertVariant);
-          }}
-        />
-
         <AdminDashboardModal
           isOpen={isAdminOpen}
           onClose={() => setIsAdminOpen(false)}
@@ -498,11 +468,6 @@ export default function App() {
             createSession(currentPersonaId, 'concept', topic, topic, expertVariant);
           }}
           onClearHistory={() => {}}
-          bookmarksCount={bookmarks.length}
-          onOpenBookmarks={() => {
-            setIsProfileOpen(false);
-            setIsBookmarksOpen(true);
-          }}
         />
 
         <TopicCompareModal

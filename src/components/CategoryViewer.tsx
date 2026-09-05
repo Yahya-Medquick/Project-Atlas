@@ -39,8 +39,6 @@ interface CategoryViewerProps {
   synonymsConnected?: string[];
   onLoadMore: () => void;
   onRetry: () => void;
-  onBookmarkItem: (item: any, category: CategoryType) => void;
-  isBookmarkedItem: (title: string, category: CategoryType) => boolean;
   onSelectTopic: (topic: string) => void;
   onOpenLogin?: () => void;
   matchMode?: 'all' | 'any' | 'phrase';
@@ -63,8 +61,6 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
   synonymsConnected,
   onLoadMore,
   onRetry,
-  onBookmarkItem,
-  isBookmarkedItem,
   onSelectTopic,
   onOpenLogin,
   matchMode = 'all',
@@ -348,8 +344,6 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
                 <PaperCard
                   key={paper.id ? `paper-${paper.id}-${idx}` : `paper-${idx}`}
                   paper={paper}
-                  onBookmark={() => onBookmarkItem(paper, "research")}
-                  isBookmarked={isBookmarkedItem(paper.title, "research")}
                 />
               ))}
             </div>
@@ -367,8 +361,6 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
               <SoftwareCard
                 key={repo.id ? `repo-${repo.id}-${idx}` : `repo-${idx}`}
                 repo={repo}
-                onBookmark={() => onBookmarkItem(repo, "software")}
-                isBookmarked={isBookmarkedItem(repo.name, "software")}
               />
             ))}
           </div>
@@ -385,8 +377,6 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
               <BookCard
                 key={book.id ? `book-${book.id}-${idx}` : `book-${idx}`}
                 book={book}
-                onBookmark={() => onBookmarkItem(book, "books")}
-                isBookmarked={isBookmarkedItem(book.title, "books")}
               />
             ))}
           </div>
@@ -416,8 +406,6 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
               <NewsCard
                 key={article.id ? `news-${article.id}-${idx}` : `news-${idx}`}
                 article={article}
-                onBookmark={() => onBookmarkItem(article, "news")}
-                isBookmarked={isBookmarkedItem(article.title, "news")}
               />
             ))}
           </div>
@@ -434,8 +422,6 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
               <CommunityCard
                 key={discussion.id ? `community-${discussion.id}-${idx}` : `community-${idx}`}
                 discussion={discussion}
-                onBookmark={() => onBookmarkItem(discussion, "communities")}
-                isBookmarked={isBookmarkedItem(discussion.title, "communities")}
               />
             ))}
           </div>

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, User, History, Settings, Bookmark, Check, Shield, Search, Sparkles } from "lucide-react";
+import { X, User, History, Settings, Check, Shield, Search, Sparkles } from "lucide-react";
 import { UserProfile } from "../types";
 import { useUser } from "../context/UserContext";
 
@@ -9,8 +9,6 @@ interface UserProfileModalProps {
   recentSearches: string[];
   onSelectSearch: (query: string) => void;
   onClearHistory: () => void;
-  bookmarksCount: number;
-  onOpenBookmarks: () => void;
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -19,13 +17,13 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   recentSearches,
   onSelectSearch,
   onClearHistory,
-  bookmarksCount,
-  onOpenBookmarks,
 }) => {
-  const { profile, updatePreferences } = useUser();
+  const { user, profile, updatePreferences } = useUser();
   const [activeTab, setActiveTab] = useState<"profile" | "history" | "preferences">("profile");
 
   if (!isOpen) return null;
+
+  const isPaid = user?.tier === "paid" || user?.tier === "pro" || user?.tier === "unlimited";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -43,6 +41,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
                   {profile.role}
                 </span>
+                {isPaid && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shadow-2xs">
+                    PRO / UNLIMITED
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">{profile.email}</p>
             </div>
@@ -95,24 +98,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           
           {activeTab === "profile" && (
             <div className="space-y-4 text-xs">
-              <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-700 dark:text-slate-300">Saved Bookmarks Collection</span>
-                  <button
-                    onClick={() => {
-                      onClose();
-                      onOpenBookmarks();
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold flex items-center gap-1 hover:bg-indigo-100 transition-colors"
-                  >
-                    <Bookmark className="w-3.5 h-3.5" /> View {bookmarksCount} Bookmarks
-                  </button>
-                </div>
-                <p className="text-slate-500 text-[11px]">
-                  All saved articles, OpenAlex papers, and open-source repositories are synchronized in your workspace.
-                </p>
-              </div>
-
               <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
                 <div className="font-bold text-slate-800 dark:text-slate-200">Account Role & Privileges</div>
                 <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">

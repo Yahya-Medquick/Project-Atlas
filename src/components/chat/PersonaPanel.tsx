@@ -411,8 +411,8 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
 
             <button
               onClick={() => {
-                const phone = "923264397102";
-                const message = encodeURIComponent('Hi, I am using Bifrost. I want to: [Support / Request a Persona / Institute Registration]');
+                const phone = import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER || "923194917631";
+                const message = encodeURIComponent('Hi G-AGE AI, I need help with: [Support / Request a Persona / Institute Registration]');
                 const url = `https://wa.me/${phone}?text=${message}`;
                 window.open(url, '_blank');
               }}

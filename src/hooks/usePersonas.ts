@@ -10,7 +10,7 @@ export function usePersonas() {
     try {
       const data = await fetchPersonas(undefined, forceRefresh);
       if (data && data.length > 0) {
-        setRawPersonas(data);
+        setRawPersonas([...data]);
         setIsLoadedFromApi(true);
       }
     } catch (err) {
@@ -26,7 +26,7 @@ export function usePersonas() {
     const interval = setInterval(() => {
       fetchPersonas(undefined, false).then(data => {
         if (data && data.length > 0) {
-          setRawPersonas(data);
+          setRawPersonas([...data]);
           setIsLoadedFromApi(true);
         }
       });
@@ -42,7 +42,7 @@ export function usePersonas() {
       clearInterval(interval);
       window.removeEventListener('personas-updated', handleUpdated);
     };
-  }, []);
+  }, [loadPersonas]);
 
   const { globalExperts, pkExperts } = useMemo(() => {
     if (!isLoadedFromApi || rawPersonas.length === 0) {

@@ -28,6 +28,7 @@ interface UserContextType {
   checkUsage: (tab: CategoryType) => Promise<TabUsage | null>;
   updateProfile: (updated: Partial<UserProfile>) => Promise<void>;
   updatePreferences: (prefs: Partial<UserProfile["preferences"]>) => Promise<void>;
+  refreshUserSession: () => Promise<void>;
 }
 
 const defaultProfile: UserProfile = {
@@ -62,6 +63,7 @@ const UserContext = createContext<UserContextType>({
   checkUsage: async () => null,
   updateProfile: async () => {},
   updatePreferences: async () => {},
+  refreshUserSession: async () => {},
 });
 
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -75,39 +77,40 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return (localStorage.getItem("bifrost_mode") as any) || "research";
   });
 
-  useEffect(() => {
-    async function loadUserSession() {
-      try {
-        const authUser = await fetchCurrentUser();
-        if (authUser) {
-          setUser(authUser);
-          setIsGuest(false);
-          localStorage.removeItem("bifrost_guest_mode");
-          if (authUser.preferred_mode) {
-            setMode(authUser.preferred_mode);
-          }
-          setProfile((prev) => ({
-            ...prev,
-            name: authUser.name || authUser.username || prev.name,
-            username: authUser.username || prev.username,
-            phone: authUser.phone || prev.phone,
-            email: authUser.email || prev.email,
-          }));
-        } else {
-          setUser(null);
-          const wasGuest = localStorage.getItem("bifrost_guest_mode") === "true";
-          setIsGuest(wasGuest);
-          const savedMode = localStorage.getItem("bifrost_mode");
-          if (savedMode === "research" || savedMode === "learning") {
-            setMode(savedMode);
-          }
+  const loadUserSession = async () => {
+    try {
+      const authUser = await fetchCurrentUser();
+      if (authUser) {
+        setUser(authUser);
+        setIsGuest(false);
+        localStorage.removeItem("bifrost_guest_mode");
+        if (authUser.preferred_mode) {
+          setMode(authUser.preferred_mode);
         }
-      } catch (err) {
-        console.warn("User session load error:", err);
-      } finally {
-        setIsLoadingAuth(false);
+        setProfile((prev) => ({
+          ...prev,
+          name: authUser.name || authUser.username || prev.name,
+          username: authUser.username || prev.username,
+          phone: authUser.phone || prev.phone,
+          email: authUser.email || prev.email,
+        }));
+      } else {
+        setUser(null);
+        const wasGuest = localStorage.getItem("bifrost_guest_mode") === "true";
+        setIsGuest(wasGuest);
+        const savedMode = localStorage.getItem("bifrost_mode");
+        if (savedMode === "research" || savedMode === "learning") {
+          setMode(savedMode);
+        }
       }
+    } catch (err) {
+      console.warn("User session load error:", err);
+    } finally {
+      setIsLoadingAuth(false);
     }
+  };
+
+  useEffect(() => {
     loadUserSession();
   }, []);
 
@@ -270,6 +273,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         checkUsage,
         updateProfile,
         updatePreferences,
+        refreshUserSession: loadUserSession,
       }}
     >
       {children}

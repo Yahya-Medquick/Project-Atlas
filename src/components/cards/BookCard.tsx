@@ -1,17 +1,13 @@
 import React from "react";
 import { BookItem } from "../../types";
-import { ExternalLink, Star, Bookmark, Check, BookOpen } from "lucide-react";
+import { ExternalLink, Star, BookOpen } from "lucide-react";
 
 interface BookCardProps {
   book: BookItem;
-  onBookmark?: (book: BookItem) => void;
-  isBookmarked?: boolean;
 }
 
 export const BookCard: React.FC<BookCardProps> = ({
   book,
-  onBookmark,
-  isBookmarked = false,
 }) => {
   return (
     <div className="group rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200 flex flex-col justify-between space-y-4">
@@ -67,19 +63,6 @@ export const BookCard: React.FC<BookCardProps> = ({
         )}
 
         <div className="flex items-center gap-2 ml-auto">
-          {onBookmark && (
-            <button
-              onClick={() => onBookmark(book)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              {isBookmarked ? (
-                <Check className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <Bookmark className="w-4 h-4" />
-              )}
-            </button>
-          )}
-
           <a
             href={book.previewLink}
             target="_blank"
