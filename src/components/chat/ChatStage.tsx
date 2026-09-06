@@ -36,9 +36,15 @@ import {
   Paperclip,
   Mic,
   MoreVertical,
+  Image as ImageIcon,
+  Camera,
+  X,
+  Lock,
+  Crown,
 } from 'lucide-react';
 import { ChatSession, ChatMessage, ChatMode, ConceptSpecs, ExamSpecs, ResearchSpecs } from '../../types/chat';
 import { ExpertPersona, EXPERTS, EXPERTS_PK } from '../../data/experts';
+import { useUser } from '../../context/UserContext';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 import { SpecificationsAccordion } from './SpecificationsAccordion';
 import { MCQCard } from '../cards/MCQCard';
@@ -144,7 +150,7 @@ interface ChatStageProps {
   session: ChatSession | null;
   activePersona: ExpertPersona;
   variant: 'global' | 'pk';
-  onSendMessage: (content: string, modeOverride?: ChatMode) => Promise<void>;
+  onSendMessage: (content: string, modeOverride?: ChatMode, imageBase64?: string) => Promise<void>;
   isLoading: boolean;
   onToggleLeftPanel: () => void;
   isLeftPanelOpen: boolean;
@@ -179,7 +185,14 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   onOpenKnowledgeGraph,
   queryUsage,
 }) => {
+  const { user } = useUser();
+  const isPaid = queryUsage.tier === 'paid' || user?.tier === 'paid' || user?.tier === 'pro' || user?.tier === 'unlimited';
+
   const [inputText, setInputText] = useState('');
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [isSpecsOpen, setIsSpecsOpen] = useState(false);
   const [showMCQCard, setShowMCQCard] = useState<boolean>(false);
   const [showDefinitionCard, setShowDefinitionCard] = useState<boolean>(false);
@@ -236,15 +249,42 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     }
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file (JPG, PNG, WebP).');
+      return;
+    }
+    setImageFileName(file.name);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAttachedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleImageButtonClick = () => {
+    if (!isPaid) {
+      onOpenPaywall();
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || isLoading) return;
+    if ((!inputText.trim() && !attachedImage) || isLoading) return;
     const msg = inputText.trim();
+    const img = attachedImage;
     setInputText('');
+    setAttachedImage(null);
+    setImageFileName(null);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    await onSendMessage(msg);
+    await onSendMessage(msg, activeMode, img || undefined);
   };
 
   const handleCopyMessage = (msgId: string, content: string) => {
@@ -975,6 +1015,15 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                   </div>
                 ) : (
                   <div>
+                    {msg.imageBase64 && (
+                      <div className="mb-2.5 max-w-sm rounded-xl overflow-hidden border border-emerald-500/30 dark:border-emerald-400/20 bg-black/5 dark:bg-black/20 shadow-xs">
+                        <img
+                          src={msg.imageBase64}
+                          alt="Attached diagram or notes"
+                          className="w-full max-h-60 object-contain rounded-xl"
+                        />
+                      </div>
+                    )}
                     <div className="whitespace-pre-wrap">{msg.content}</div>
                     {/* User Message Timestamp with Double Blue Tick */}
                     <div className="flex items-center justify-end gap-1 text-[10px] text-[#54656f] dark:text-emerald-200/80 font-medium mt-1">
@@ -1067,34 +1116,114 @@ export const ChatStage: React.FC<ChatStageProps> = ({
 
       {/* 4. WHATSAPP CHAT COMPOSER STAGE */}
       <div className="p-2 sm:p-3 border-t border-[#e9edef] dark:border-[#2a3942] bg-[#f0f2f5] dark:bg-[#202c33] shadow-md shrink-0 z-10">
-        <div className="max-w-3xl mx-auto flex items-end gap-2">
-          {/* Main Rounded Input Box */}
-          <form
-            onSubmit={handleSubmit}
-            className="flex-1 flex items-end gap-2 px-3 py-1.5 rounded-3xl bg-white dark:bg-[#2a3942] border border-slate-300/70 dark:border-transparent shadow-xs focus-within:ring-2 focus-within:ring-[#00a884]/30 transition-all"
-          >
-            {/* Auto-growing Textarea */}
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={`Message ${activePersona.name} (English or Roman Urdu / Hinglish)...`}
-              className="flex-1 max-h-36 py-1.5 px-1 bg-transparent text-sm text-[#111b21] dark:text-[#e9edef] placeholder:text-slate-400 dark:placeholder:text-slate-400 resize-none focus:outline-none leading-relaxed"
-            />
-          </form>
+        <div className="max-w-3xl mx-auto space-y-2">
+          {/* Hidden File Input for Image Upload */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImageSelect}
+            accept="image/*"
+            className="hidden"
+          />
 
-          {/* WhatsApp Signature Circular Green Send Button */}
-          <button
-            onClick={handleSubmit}
-            type="button"
-            disabled={!inputText.trim() || isLoading}
-            className="w-11 h-11 rounded-full bg-[#00a884] hover:bg-[#029676] active:scale-95 text-white disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center justify-center shrink-0 shadow-sm cursor-pointer"
-            title="Send Message (Enter)"
-          >
-            <Send className="w-5 h-5 ml-0.5" />
-          </button>
+          {/* Attached Image Preview Strip */}
+          {attachedImage && (
+            <div className="p-2 rounded-2xl bg-white dark:bg-[#2a3942] border border-emerald-500/40 shadow-xs flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-1">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <img
+                  src={attachedImage}
+                  alt="Thumbnail preview"
+                  className="w-12 h-12 object-cover rounded-xl border border-emerald-500/30 shrink-0"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                      {imageFileName || 'Attached Image Question'}
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-bold border border-emerald-500/30 shrink-0">
+                      PRO VISION
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                    Gemini will read handwritten notes, past papers, or diagrams.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAttachedImage(null);
+                  setImageFileName(null);
+                }}
+                className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-[#32424b] text-slate-400 hover:text-rose-500 transition-colors cursor-pointer shrink-0"
+                title="Remove Image"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Main Rounded Input Box & Actions */}
+          <div className="flex items-end gap-2">
+            <form
+              onSubmit={handleSubmit}
+              className="flex-1 flex items-end gap-2 px-3 py-1.5 rounded-3xl bg-white dark:bg-[#2a3942] border border-slate-300/70 dark:border-transparent shadow-xs focus-within:ring-2 focus-within:ring-[#00a884]/30 transition-all"
+            >
+              {/* Pro Image / Vision Attachment Button */}
+              <div className="relative flex items-center shrink-0 self-center pb-0.5">
+                <button
+                  type="button"
+                  onClick={handleImageButtonClick}
+                  className={`p-1.5 rounded-full transition-all flex items-center justify-center cursor-pointer ${
+                    attachedImage
+                      ? 'bg-emerald-500 text-white shadow-xs'
+                      : isPaid
+                      ? 'text-slate-500 hover:text-[#00a884] hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-[#32424b]'
+                      : 'text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
+                  }`}
+                  title={isPaid ? "Read image / diagram (Pro Vision)" : "Read Image (Pro Feature - Click to Upgrade)"}
+                >
+                  <Camera className="w-5 h-5" />
+                </button>
+                {!isPaid && (
+                  <span
+                    onClick={handleImageButtonClick}
+                    className="absolute -top-1.5 -right-1 px-1 py-0.2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black text-[8px] flex items-center gap-0.5 shadow-xs cursor-pointer tracking-tighter"
+                    title="Pro Feature"
+                  >
+                    <Crown className="w-2 h-2" />
+                    <span>PRO</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Auto-growing Textarea */}
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  attachedImage
+                    ? "Ask a specific question about this image, or hit Send to transcribe & solve..."
+                    : `Message ${activePersona.name} (English or Roman Urdu / Hinglish)...`
+                }
+                className="flex-1 max-h-36 py-1.5 px-1 bg-transparent text-sm text-[#111b21] dark:text-[#e9edef] placeholder:text-slate-400 dark:placeholder:text-slate-400 resize-none focus:outline-none leading-relaxed"
+              />
+            </form>
+
+            {/* WhatsApp Signature Circular Green Send Button */}
+            <button
+              onClick={handleSubmit}
+              type="button"
+              disabled={(!inputText.trim() && !attachedImage) || isLoading}
+              className="w-11 h-11 rounded-full bg-[#00a884] hover:bg-[#029676] active:scale-95 text-white disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center justify-center shrink-0 shadow-sm cursor-pointer"
+              title="Send Message (Enter)"
+            >
+              <Send className="w-5 h-5 ml-0.5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

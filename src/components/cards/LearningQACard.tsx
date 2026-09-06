@@ -12,10 +12,13 @@ import {
   RotateCcw,
   GraduationCap,
   Plus,
-  Check
+  Check,
+  Lock,
+  Crown,
 } from "lucide-react";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { useNotes } from "../../hooks/useNotes";
+import { useUser } from "../../context/UserContext";
 
 interface MCQ {
   question: string;
@@ -32,6 +35,8 @@ interface QAResponse {
 
 export const LearningQACard: React.FC = () => {
   const { addNote } = useNotes();
+  const { user } = useUser();
+  const isPaid = user?.tier === "paid" || user?.tier === "pro" || user?.tier === "unlimited";
   const [addedMap, setAddedMap] = useState<Record<string, boolean>>({});
 
   const triggerToast = (msg: string) => {
@@ -89,6 +94,10 @@ export const LearningQACard: React.FC = () => {
 
   // File Upload Handlers
   const handleFileSelect = (file: File) => {
+    if (!isPaid) {
+      setError("Image Reading & Diagram Analysis is a Pro feature. Please upgrade to G-AGE Pro to upload diagrams and handwritten notes.");
+      return;
+    }
     if (!file.type.startsWith("image/")) {
       setError("Please upload an image file.");
       return;
@@ -318,25 +327,60 @@ export const LearningQACard: React.FC = () => {
 
           {/* Interactive Drag-and-Drop Image Uploader */}
           <div className="space-y-2">
-            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-              Handwritten or Diagram Image Upload (Optional)
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span>Handwritten or Diagram Image Upload</span>
+                {isPaid ? (
+                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px] font-bold border border-emerald-500/20">
+                    PRO ACTIVE
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] font-bold border border-amber-500/20 flex items-center gap-0.5">
+                    <Crown className="w-2.5 h-2.5" />
+                    <span>PRO ONLY</span>
+                  </span>
+                )}
+              </label>
+              {!isPaid && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                  Upgrade to unlock OCR
+                </span>
+              )}
+            </div>
             
             {!imageBase64 ? (
               <div
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if (!isPaid) {
+                    setError("Image Reading & Diagram Analysis is a Pro feature. Please upgrade to G-AGE Pro to upload diagrams and handwritten notes.");
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}
                 className={`border border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-2 hover:bg-slate-50 dark:hover:bg-slate-950/40 ${
                   isDragging
                     ? "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/20"
+                    : !isPaid
+                    ? "border-amber-200/70 dark:border-amber-900/40 bg-amber-50/20 dark:bg-amber-950/10"
                     : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
                 }`}
               >
-                <Upload className="w-6 h-6 text-slate-400" />
+                {!isPaid ? (
+                  <div className="w-8 h-8 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-1">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                ) : (
+                  <Upload className="w-6 h-6 text-slate-400" />
+                )}
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Drag and drop your handwritten question, or <span className="text-indigo-600 dark:text-indigo-400">browse file</span>
+                  {!isPaid ? (
+                    <span>Unlock <span className="text-amber-600 dark:text-amber-400">Gemini Vision OCR</span> to analyze handwritten exams</span>
+                  ) : (
+                    <span>Drag and drop your handwritten question, or <span className="text-indigo-600 dark:text-indigo-400">browse file</span></span>
+                  )}
                 </span>
                 <span className="text-[10px] text-slate-400">
                   Supports JPG, PNG, WebP images

@@ -239,31 +239,32 @@ export default function App() {
   );
 
   // Send message handler (invokes /api/chat/message with mode, specs, and persona prompt)
-  const handleSendMessage = async (content: string, modeOverride?: ChatMode) => {
-    if (!content.trim()) return;
+  const handleSendMessage = async (content: string, modeOverride?: ChatMode, imageBase64?: string) => {
+    if (!content.trim() && !imageBase64) return;
 
     if (!canExecuteQuery()) {
       triggerPaywall();
       return;
     }
 
-    const currentSession = activeSession || createSession('hamza', 'concept', content.slice(0, 32));
+    const currentSession = activeSession || createSession('hamza', 'concept', (content || "Image Analysis").slice(0, 32));
     const targetMode = modeOverride || currentSession.mode || 'concept';
 
     const userMessage: ChatMessage = {
       id: `msg_${Date.now()}_u`,
       role: 'user',
-      content: content.trim(),
+      content: content.trim() || (imageBase64 ? "Please analyze this attached image/diagram." : ""),
       timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
       mode: targetMode,
       personaId: currentSession.personaId,
+      imageBase64: imageBase64 || undefined,
     };
 
     const newMessages = [...currentSession.messages, userMessage];
 
     // If first user message, update session title
     const isFirstUserMsg = currentSession.messages.filter((m) => m.role === 'user').length === 0;
-    const newTitle = isFirstUserMsg ? content.trim().slice(0, 36) : currentSession.title;
+    const newTitle = isFirstUserMsg ? (content.trim() || "Image Analysis").slice(0, 36) : currentSession.title;
 
     updateSessionMessages(currentSession.id, newMessages, newTitle);
     setIsLoadingMessage(true);
@@ -278,16 +279,17 @@ export default function App() {
           mode: targetMode,
           specs: currentSession.specs || {},
           variant: currentSession.variant || expertVariant,
-          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+          messages: newMessages.map((m) => ({ role: m.role, content: m.content, imageBase64: m.imageBase64 })),
         }),
       });
 
       if (!response.ok) {
-        if (response.status === 429) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 429 || response.status === 403 || errorData.isPaywall) {
           triggerPaywall();
-          throw new Error('Query limit reached. Upgrade to Pro.');
+          throw new Error(errorData.error || 'Query limit reached. Upgrade to Pro.');
         }
-        throw new Error(`Server returned ${response.status}`);
+        throw new Error(errorData.error || `Server returned ${response.status}`);
       }
 
       const data = await response.json();
@@ -306,7 +308,7 @@ export default function App() {
     } catch (err: any) {
       console.warn('Chat error, falling back to local fallback:', err);
       // Fallback assistant response
-      const fallbackReply = `### ${activePersona.name} (${targetMode.toUpperCase()} MODE)\n\nThank you for exploring **${content.trim()}**.\n\n$$\\mathcal{H} |\\psi\\rangle = E |\\psi\\rangle$$\n\nHere is a foundational breakdown:\n1. **Core Mechanism**: In ${targetMode} mode, we analyze the structural invariants.\n2. **Next Steps**: Feel free to request step-by-step derivations or exam rubrics.`;
+      const fallbackReply = `### ${activePersona.name} (${targetMode.toUpperCase()} MODE)\n\nThank you for exploring **${content.trim() || 'this question'}**.\n\n$$\\mathcal{H} |\\psi\\rangle = E |\\psi\\rangle$$\n\nHere is a foundational breakdown:\n1. **Core Mechanism**: In ${targetMode} mode, we analyze the structural invariants.\n2. **Next Steps**: Feel free to request step-by-step derivations or exam rubrics.`;
 
       const fallbackMsg: ChatMessage = {
         id: `msg_${Date.now()}_a`,
@@ -407,6 +409,7 @@ export default function App() {
         suggestedPersonaId={suggestedPersona}
         onSelectPrompt={(prompt) => handleSendMessage(prompt)}
         onSelectTopic={(topic) => createSession(currentPersonaId, 'concept', topic, topic, expertVariant)}
+        onOpenPaywall={triggerPaywall}
       />
 
       {/* MODALS & OVERLAYS */}

@@ -19,9 +19,12 @@ import {
   MessageCircle,
   Phone,
   HelpCircle,
+  Lock,
+  Crown,
 } from 'lucide-react';
 import { ExpertPersona } from '../../data/experts';
 import { usePersonas } from '../../hooks/usePersonas';
+import { useUser } from '../../context/UserContext';
 
 interface PersonaPanelProps {
   isOpen: boolean;
@@ -34,6 +37,7 @@ interface PersonaPanelProps {
   suggestedPersonaId?: string;
   onSelectPrompt?: (prompt: string) => void;
   onSelectTopic?: (topic: string) => void;
+  onOpenPaywall?: () => void;
 }
 
 const DOMAIN_CATEGORIES = [
@@ -57,9 +61,13 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
   suggestedPersonaId,
   onSelectPrompt,
   onSelectTopic,
+  onOpenPaywall,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const { user, profile } = useUser();
+  const isPaid = user?.tier === 'paid' || user?.tier === 'pro' || user?.tier === 'unlimited';
 
   const { globalExperts, pkExperts } = usePersonas();
   const activeExpertSet = variant === 'pk' ? pkExperts : globalExperts;
@@ -382,52 +390,100 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
             );
           })}
 
-          {/* WhatsApp Student Support & Mentorship Card */}
-          <div className="mt-4 p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-slate-900/50 border border-emerald-500/30 dark:border-emerald-500/20 text-slate-900 dark:text-slate-100 shadow-sm space-y-2.5">
+          {/* WhatsApp Student Support & Mentorship Card (Paid Pro Feature) */}
+          <div className={`mt-4 p-3.5 rounded-2xl bg-gradient-to-br ${
+            isPaid
+              ? 'from-emerald-500/10 via-teal-500/5 to-slate-900/50 border-emerald-500/30 dark:border-emerald-500/20'
+              : 'from-amber-500/10 via-purple-500/5 to-slate-900/50 border-amber-500/30 dark:border-amber-500/20'
+          } border text-slate-900 dark:text-slate-100 shadow-sm space-y-2.5`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs">
-                  <MessageCircle className="w-4 h-4" />
+                <div className={`w-7 h-7 rounded-xl ${isPaid ? 'bg-emerald-500' : 'bg-gradient-to-br from-amber-500 to-purple-600'} text-white flex items-center justify-center shadow-xs`}>
+                  {isPaid ? <MessageCircle className="w-4 h-4" /> : <Crown className="w-4 h-4" />}
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                     {variant === 'pk' ? '🇵🇰 Student WhatsApp Help' : 'WhatsApp Study Desk'}
                   </h4>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                    Direct Academic Counselor
+                  <span className={`text-[10px] ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'} font-medium flex items-center gap-1`}>
+                    {isPaid ? 'Direct Academic Counselor' : 'Pro Member Feature'}
                   </span>
                 </div>
               </div>
-              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                Online
+              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                isPaid
+                  ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center gap-1'
+              }`}>
+                {isPaid ? 'PRO ACTIVE' : (
+                  <>
+                    <Lock className="w-2.5 h-2.5" />
+                    <span>PRO ONLY</span>
+                  </>
+                )}
               </span>
             </div>
 
             <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-              {variant === 'pk'
-                ? 'Get 1-on-1 guidance on Pakistani university admissions (FAST, NUST, LUMS, AKU), syllabus roadblocks, or career roadmaps.'
-                : 'Need personalized research advice or study roadmaps? Connect directly with academic mentors on WhatsApp.'}
+              {isPaid
+                ? (variant === 'pk'
+                    ? 'Get priority 1-on-1 guidance on Pakistani university admissions (FAST, NUST, LUMS, AKU), syllabus roadblocks, or career roadmaps.'
+                    : 'Get priority 1-on-1 personalized research advice and study roadmaps with your Pro membership.')
+                : (variant === 'pk'
+                    ? 'Exclusive 1-on-1 WhatsApp academic counseling for Pakistani university admissions (FAST, NUST, LUMS, AKU) & syllabus roadblocks.'
+                    : 'Exclusive 1-on-1 personalized academic mentorship and research roadmaps on WhatsApp for Pro subscribers.')}
             </p>
 
             <button
               onClick={() => {
-                const phone = import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER || "923194917631";
-                const message = encodeURIComponent('Hi G-AGE AI, I need help with: [Support / Request a Persona / Institute Registration]');
+                if (!isPaid) {
+                  if (onOpenPaywall) {
+                    onOpenPaywall();
+                  } else {
+                    const rawPhone = import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER || "923264397102";
+                    const phone = rawPhone.replace(/\D/g, "") || "923264397102";
+                    const currentUsername = user?.username || profile?.username || user?.name || profile?.name || 'Guest';
+                    const message = encodeURIComponent(`Hi, I want to upgrade to G-AGE Pro to access the WhatsApp Study Desk. My username is: ${currentUsername}`);
+                    const url = `https://wa.me/${phone}?text=${message}`;
+                    window.open(url, '_blank');
+                  }
+                  return;
+                }
+                const rawPhone = import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER || "923264397102";
+                const phone = rawPhone.replace(/\D/g, "") || "923264397102";
+                const currentUsername = user?.username || profile?.username || user?.name || profile?.name || 'Pro User';
+                const message = encodeURIComponent(`Hi G-AGE AI Study Desk, I am a Pro subscriber (${currentUsername}). I need 1-on-1 academic mentorship at the Study Desk.`);
                 const url = `https://wa.me/${phone}?text=${message}`;
                 window.open(url, '_blank');
               }}
-              className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-xs group cursor-pointer"
+              className={`w-full py-2 px-3 rounded-xl ${
+                isPaid
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                  : 'bg-gradient-to-r from-amber-500 to-purple-600 hover:from-amber-600 hover:to-purple-700 text-white'
+              } text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-xs group cursor-pointer`}
             >
-              <MessageCircle className="w-3.5 h-3.5" />
-              <span>Chat on WhatsApp</span>
-              <ExternalLink className="w-3 h-3 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+              {isPaid ? (
+                <>
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Chat on WhatsApp Desk</span>
+                  <ExternalLink className="w-3 h-3 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Unlock Pro WhatsApp Desk</span>
+                  <Crown className="w-3 h-3 opacity-70 group-hover:scale-110 transition-transform" />
+                </>
+              )}
             </button>
 
             <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-emerald-500/10">
               <span className="flex items-center gap-1">
                 <HelpCircle className="w-3 h-3" /> Mon-Sat (9 AM - 9 PM PKT)
               </span>
-              <span className="font-mono text-[9px] text-slate-500">Free Mentorship</span>
+              <span className={`font-mono text-[9px] ${isPaid ? 'text-emerald-500 font-semibold' : 'text-amber-500 font-semibold'}`}>
+                {isPaid ? 'Pro 1-on-1 Desk' : 'Paid Feature'}
+              </span>
             </div>
           </div>
         </div>

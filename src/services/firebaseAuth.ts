@@ -137,7 +137,7 @@ export async function sendFirebasePhoneOtp(
 
     const code = error?.code || '';
     if (code === 'auth/invalid-phone-number') {
-      throw new Error('Invalid phone number format. Please enter a valid mobile number (e.g., 03194917631 or +923194917631).');
+      throw new Error('Invalid phone number format. Please enter a valid mobile number (e.g., 03264397102 or +923264397102).');
     } else if (code === 'auth/missing-phone-number') {
       throw new Error('Phone number is missing. Please enter your mobile number.');
     } else if (code === 'auth/quota-exceeded') {

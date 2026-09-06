@@ -66,6 +66,7 @@ export interface ChatMessage {
   timestamp: string;
   mode?: ChatMode;
   personaId?: string;
+  imageBase64?: string;
   metadata?: ChatMessageMetadata;
 }
 

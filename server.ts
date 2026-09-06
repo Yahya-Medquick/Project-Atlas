@@ -2454,6 +2454,17 @@ app.post("/api/learn/answer", learnRateLimiter, async (req: Request, res: Respon
       return res.status(400).json({ error: "Either question text or image upload is required." });
     }
 
+    if (imageBase64 && typeof imageBase64 === "string" && imageBase64.length > 50) {
+      const user = getCurrentUser(req);
+      const isPro = user && (user.tier === "paid" || user.tier === "pro" || user.tier === "unlimited");
+      if (!isPro) {
+        return res.status(403).json({
+          error: "Image Reading & Diagram Analysis is a Pro feature. Please upgrade to G-AGE Pro.",
+          isPaywall: true,
+        });
+      }
+    }
+
     const boardStr = cleanBoard || "Punjab/Federal";
     const gradeStr = cleanGrade || "Matric/FSc";
     const diffVal = isNaN(cleanDifficulty) ? 5 : cleanDifficulty;
@@ -3351,11 +3362,41 @@ app.post("/api/chat/message", counselRateLimiter, async (req: Request, res: Resp
 
     const fullSystemInstruction = `${baseSystemPrompt}\n\n${concisenessMandate}\n\n${modeInstruction}\n\nMaintain your distinct persona voice and professional identity throughout the dialogue.`;
 
-    // Map messages to Gemini contents format
-    const contents = messages.map((m: any) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content || "" }]
-    }));
+    // Check if any message has image attachment (Pro feature)
+    const hasImageAttachment = messages.some((m: any) => m.imageBase64 && typeof m.imageBase64 === "string" && m.imageBase64.length > 50);
+    if (hasImageAttachment) {
+      const user = getCurrentUser(req);
+      const isPro = user && (user.tier === "paid" || user.tier === "pro" || user.tier === "unlimited");
+      if (!isPro) {
+        return res.status(403).json({
+          error: "Image Reading (multimodal OCR) is an exclusive Pro feature. Please upgrade to G-AGE Pro to upload diagrams and handwritten notes.",
+          isPaywall: true,
+        });
+      }
+    }
+
+    // Map messages to Gemini contents format with multimodal vision support
+    const contents = messages.map((m: any) => {
+      const parts: any[] = [];
+      if (m.imageBase64 && typeof m.imageBase64 === "string" && m.imageBase64.length > 50) {
+        try {
+          const parsed = parseBase64Image(m.imageBase64);
+          parts.push({
+            inlineData: {
+              mimeType: parsed.mimeType,
+              data: parsed.data,
+            },
+          });
+        } catch (e) {
+          console.warn("Failed to parse base64 image part in chat:", e);
+        }
+      }
+      parts.push({ text: m.content || "Please analyze this attached diagram/image." });
+      return {
+        role: m.role === "assistant" ? "model" : "user",
+        parts,
+      };
+    });
 
     const result = await callGeminiWithFallback({
       contents,
