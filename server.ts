@@ -6602,7 +6602,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
 // Vite middleware & production setup
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.argv[1]?.endsWith(".cjs")) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
