@@ -5,4 +5,4 @@ RUN npm install --prefer-offline --no-fund --no-audit
 COPY . .
 RUN npm run build
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "dist/server.cjs"]

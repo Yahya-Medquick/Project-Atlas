@@ -869,7 +869,7 @@ async function fetchWithRetry<T>(
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Security: JSON Body Payload Size Limit (Mitigates DoS via large payloads)
 app.use(express.json({ limit: "100kb" }));
