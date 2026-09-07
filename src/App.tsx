@@ -437,6 +437,7 @@ export default function App() {
       <NotesSidePanel
         isOpen={isNotesOpen}
         onClose={() => setIsNotesOpen(false)}
+        persona={activePersona}
       />
 
       <Suspense fallback={null}>
@@ -455,6 +456,7 @@ export default function App() {
           onClose={() => setCompiledNotesModalState({ isOpen: false, compiledText: '', subjectTags: [] })}
           compiledText={compiledNotesModalState.compiledText}
           subjectTags={compiledNotesModalState.subjectTags}
+          persona={activePersona}
         />
 
         <AdminDashboardModal

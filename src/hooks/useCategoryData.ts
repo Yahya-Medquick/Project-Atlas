@@ -65,7 +65,8 @@ export function useCategoryData(topic: string, activeCategory: CategoryType) {
       }
 
       try {
-        const response = await fetchCategoryData(topic, activeCategory, pageNum, 10, isRetryAttempt, controller.signal, matchMode);
+        const pageSize = activeCategory === "news" ? 6 : 10;
+        const response = await fetchCategoryData(topic, activeCategory, pageNum, pageSize, isRetryAttempt, controller.signal, matchMode);
 
         // Verify request is still relevant
         if (

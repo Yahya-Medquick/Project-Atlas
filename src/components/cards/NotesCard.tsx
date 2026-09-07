@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { CompiledNotesModal } from "../CompiledNotesModal";
+import { ExpertPersona } from "../../types";
 
 interface Note {
   id: string;
@@ -41,7 +42,11 @@ const SUBJECT_SUGGESTIONS = [
   "Islamiat"
 ];
 
-export const NotesCard: React.FC = () => {
+interface NotesCardProps {
+  persona?: ExpertPersona | null;
+}
+
+export const NotesCard: React.FC<NotesCardProps> = ({ persona }) => {
   const { isLoggedIn } = useUser();
 
   // State Management
@@ -352,41 +357,35 @@ export const NotesCard: React.FC = () => {
     setError(null);
 
     try {
-      if (isLoggedIn) {
-        const response = await fetch("/api/notes/compile", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          body: JSON.stringify({ noteIds: selectedIds })
-        });
+      const selectedNotes = notes.filter((n) => selectedIds.includes(n.id));
+      const payload = {
+        noteIds: selectedIds,
+        notes: selectedNotes.map((n) => ({
+          title: n.title,
+          content: n.content,
+          subject_tag: n.subject_tag || "General"
+        }))
+      };
 
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || "Failed to compile notes.");
-        }
+      const response = await fetch("/api/notes/compile", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(payload)
+      });
 
-        const data = await response.json();
-        setCompiledText(data.compiled);
-        
-        // Extract unique subject tags of selected notes
-        const selectedNotes = notes.filter((n) => selectedIds.includes(n.id));
-        const selectedSubjects = Array.from(new Set(selectedNotes.map((n) => n.subject_tag).filter(Boolean))) as string[];
-        setSubjectTags(selectedSubjects);
-        setModalOpen(true);
-      } else {
-        // Handle guest local notes compile simulation or local proxy
-        // Since we need real Gemini output, we will invoke the compile API endpoint
-        // using the content of guest notes as mock items, but guest doesn't have session.
-        // Let's explain to the user or allow compiling if the endpoint can accept the local content,
-        // Wait! The user request says: "All note operations for non-authenticated users use localStorage key bifrost_notes... Select 2+ notes and compile — confirm coherent structured output from Gemini".
-        // Let's pass the guest notes payload to a helper/proxy endpoint if guest compiled. But wait, we can also pass the payload or let's check if the API can handle it! Oh, the POST /api/notes/compile endpoint requires JWT auth in description.
-        // Wait, is there a bypass, or can we send notes content directly?
-        // Let's make an alternative or allow standard compilation. Let's make the POST /api/notes/compile require JWT auth but we can also build a backup in frontend or check if they are logged in.
-        // To ensure it works perfectly for non-logged in users too, let's allow sending the actual text directly to a fallback, or we can use another route, or since the model is server-side we can allow compilation. Let's make POST /api/notes/compile robust. If they compile on guest, we can tell them: "Please register or log in to use AI study compilation, or sync your guest notes first!". That's extremely smart and matches production standards!
-        // Let's check: "Select 2+ notes and compile — confirm coherent structured output from Gemini." Let's implement compilation!
-        // Wait, how can guest compilation work? If we support passing guest notes directly, or if the user logs in. Let's support guest compilation by letting the POST /api/notes/compile endpoint allow direct compilation if noteIds are not valid UUIDs but instead it passes a direct text array, or since they are in localStorage we can just do a real mock, or since we want 100% real Gemini, we can fetch compile with notes. Let's see if the server could support compiled text for guest notes as well! Yes!
-        triggerToast("Please log in to compile notes using Gemini AI!");
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to compile notes.");
       }
+
+      const data = await response.json();
+      setCompiledText(data.compiled);
+      
+      // Extract unique subject tags of selected notes
+      const selectedSubjects = Array.from(new Set(selectedNotes.map((n) => n.subject_tag).filter(Boolean))) as string[];
+      setSubjectTags(selectedSubjects);
+      setModalOpen(true);
     } catch (err: any) {
       console.error(err);
       triggerToast(err.message || "Failed to compile selected notes.");
@@ -692,7 +691,13 @@ export const NotesCard: React.FC = () => {
         </div>
       </div>
 
-      <CompiledNotesModal isOpen={modalOpen} onClose={() => setModalOpen(false)} compiledText={compiledText} subjectTags={subjectTags} />
+      <CompiledNotesModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        compiledText={compiledText}
+        subjectTags={subjectTags}
+        persona={persona}
+      />
 
     </div>
   );

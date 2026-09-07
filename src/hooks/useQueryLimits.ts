@@ -163,10 +163,12 @@ export function useQueryLimits() {
     };
 
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('query_usage_updated', handleFocus);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('query_usage_updated', handleFocus);
     };
   }, [syncUsage]);
 
@@ -215,6 +217,11 @@ export function useQueryLimits() {
     if (!isLoggedIn && nextGuestCount >= GUEST_LIFETIME_LIMIT) {
       setIsPaywallOpen(true);
     }
+
+    // Broadcast usage change across app listeners
+    try {
+      window.dispatchEvent(new Event('query_usage_updated'));
+    } catch (_) {}
 
     // Write-through to backend PostgreSQL device_limits immediately
     fetch('/api/query/track', {

@@ -12,7 +12,7 @@ import { CommunityCard } from "./cards/CommunityCard";
 import { AIQuestionAnswerCard } from "./AIQuestionAnswerCard";
 import { MultiLevelDefinitionCard } from "./MultiLevelDefinitionCard";
 import { HistoryViewer } from "./HistoryViewer";
-import { AlertCircle, RefreshCw, ArrowDown, FolderOpen, Lock, LogIn, Clock, ShieldAlert, MessageSquare, Compass, FileText } from "lucide-react";
+import { AlertCircle, RefreshCw, ArrowDown, FolderOpen, Lock, LogIn, Clock, ShieldAlert, MessageSquare, Compass, FileText, Loader2 } from "lucide-react";
 import { useUser } from "../context/UserContext";
 
 const KnowledgeGraph = lazy(() =>
@@ -525,16 +525,21 @@ export const CategoryViewer: React.FC<CategoryViewerProps> = ({
       {hasMore && (
         <div className="pt-8 text-center">
           <button
+            id="load-more-results-btn"
+            type="button"
             onClick={onLoadMore}
             disabled={isLoadingMore}
             className="px-6 py-3 rounded-2xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white transition-colors font-semibold text-xs inline-flex items-center gap-2 shadow-md disabled:opacity-50 cursor-pointer"
           >
             {isLoadingMore ? (
-              <span>Loading more results...</span>
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-white dark:text-slate-900" />
+                <span>Loading more {category === "news" ? "news" : "results"}...</span>
+              </>
             ) : (
               <>
                 <ArrowDown className="w-4 h-4" />
-                <span>Load More Results</span>
+                <span>Load More {category === "news" ? "News" : "Results"}</span>
               </>
             )}
           </button>

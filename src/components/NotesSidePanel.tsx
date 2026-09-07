@@ -2,13 +2,15 @@ import React, { useState, useMemo } from "react";
 import { X, Trash2, Filter, Sparkles, CheckSquare, Square, AlertCircle, FileText } from "lucide-react";
 import { useNotes } from "../hooks/useNotes";
 import { CompiledNotesModal } from "./CompiledNotesModal";
+import { ExpertPersona } from "../types";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  persona?: ExpertPersona | null;
 }
 
-export const NotesSidePanel = ({ isOpen, onClose }: Props) => {
+export const NotesSidePanel = ({ isOpen, onClose, persona }: Props) => {
   const { notes, loading, error, deleteNote, compileNotes } = useNotes();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [subjectFilter, setSubjectFilter] = useState("All");
@@ -220,6 +222,7 @@ export const NotesSidePanel = ({ isOpen, onClose }: Props) => {
         onClose={() => setModalOpen(false)} 
         compiledText={compiledText} 
         subjectTags={subjectTags} 
+        persona={persona}
       />
     </>
   );

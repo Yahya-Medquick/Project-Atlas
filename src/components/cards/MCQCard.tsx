@@ -12,10 +12,12 @@ import {
   ChevronLeft,
   Award,
   Zap,
-  BookOpen
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 import { useNotes } from '../../hooks/useNotes';
+import { useQueryLimits } from '../../hooks/useQueryLimits';
 
 export interface MCQQuestion {
   id: string;
@@ -29,48 +31,107 @@ interface MCQCardProps {
   topic: string;
   onSaveToNotes?: (content: string, title?: string) => void;
   onClose?: () => void;
+  onOpenPaywall?: () => void;
+  onRecordQuery?: () => boolean;
 }
 
-export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose }) => {
+export const MCQCard: React.FC<MCQCardProps> = ({
+  topic,
+  onSaveToNotes,
+  onClose,
+  onOpenPaywall
+}) => {
   const [questions, setQuestions] = useState<MCQQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [showExplanation, setShowExplanation] = useState<Record<number, boolean>>({});
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isGeneratingMore, setIsGeneratingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [batchError, setBatchError] = useState<string | null>(null);
   const [savedToNotesMap, setSavedToNotesMap] = useState<Record<number, boolean>>({});
   const [score, setScore] = useState<{ correct: number; totalAnswered: number }>({ correct: 0, totalAnswered: 0 });
 
   const { addNote } = useNotes();
+  const { canExecuteQuery, recordQueryExecution, triggerPaywall, usage } = useQueryLimits();
+
+  const handleOpenPaywall = () => {
+    triggerPaywall();
+    if (onOpenPaywall) {
+      onOpenPaywall();
+    }
+  };
 
   const fetchMCQs = async (isNewBatch = false) => {
-    setIsLoading(true);
-    setError(null);
+    if (isNewBatch) {
+      // 1. Verify query allowance and deduct 1 query limit for the 3 new MCQs
+      if (!canExecuteQuery()) {
+        handleOpenPaywall();
+        return;
+      }
+
+      const recorded = recordQueryExecution();
+      if (!recorded) {
+        handleOpenPaywall();
+        return;
+      }
+
+      setIsGeneratingMore(true);
+      setBatchError(null);
+    } else {
+      setIsLoading(true);
+      setError(null);
+    }
+
     try {
-      const res = await fetch(`/api/mcqs?topic=${encodeURIComponent(topic)}`);
+      const currentOffset = isNewBatch ? questions.length : 0;
+      const currentBatch = Math.floor(currentOffset / 3) + 1;
+      const existingSummary = isNewBatch
+        ? questions.slice(-4).map((q) => q.question.slice(0, 45)).join('; ')
+        : '';
+
+      const url = `/api/mcqs?topic=${encodeURIComponent(topic)}&offset=${currentOffset}&batch=${currentBatch}&existing=${encodeURIComponent(existingSummary)}${isNewBatch ? '&trackUsage=true' : ''}`;
+      
+      const res = await fetch(url);
       if (!res.ok) {
+        if (res.status === 429) {
+          handleOpenPaywall();
+          throw new Error('Daily query limit reached. Upgrade to Pro for unlimited MCQs.');
+        }
         throw new Error('Failed to generate MCQs');
       }
+
       const data = await res.json();
       if (data && Array.isArray(data.questions) && data.questions.length > 0) {
         if (isNewBatch) {
-          setQuestions((prev) => [...prev, ...data.questions]);
-          setCurrentIndex(questions.length);
+          setQuestions((prev) => {
+            const nextIdx = prev.length;
+            const combined = [...prev, ...data.questions];
+            setCurrentIndex(nextIdx);
+            return combined;
+          });
+          setBatchError(null);
         } else {
           setQuestions(data.questions);
           setCurrentIndex(0);
           setSelectedAnswers({});
           setShowExplanation({});
           setScore({ correct: 0, totalAnswered: 0 });
+          setError(null);
         }
       } else {
-        throw new Error('No questions returned');
+        throw new Error('No questions returned from AI tutor.');
       }
     } catch (err: any) {
       console.warn('MCQ generation error:', err);
-      setError(err?.message || 'Unable to generate questions at this time.');
+      if (isNewBatch) {
+        setBatchError(err?.message || 'Unable to generate more questions at this moment. Please try again.');
+      } else {
+        setError(err?.message || 'Unable to generate questions at this time.');
+      }
     } finally {
       setIsLoading(false);
+      setIsGeneratingMore(false);
     }
   };
 
@@ -84,6 +145,7 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
     if (selectedAnswers[questionIdx] !== undefined) return; // already answered
 
     const currentQ = questions[questionIdx];
+    if (!currentQ) return;
     const isCorrect = optionIdx === currentQ.answerIndex;
 
     setSelectedAnswers((prev) => ({ ...prev, [questionIdx]: optionIdx }));
@@ -123,7 +185,7 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
   const selectedOpt = currentQ ? selectedAnswers[currentIndex] : undefined;
 
   return (
-    <div className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden animate-in fade-in duration-200">
+    <div id="mcq-quiz-card" className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden animate-in fade-in duration-200">
       {/* Header */}
       <div className="px-4 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -155,19 +217,23 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
           )}
 
           <button
+            id="refresh-mcq-btn"
+            type="button"
             onClick={() => fetchMCQs(false)}
-            disabled={isLoading}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+            disabled={isLoading || isGeneratingMore}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
             title="Regenerate MCQs"
           >
             <RotateCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline text-[11px]">Refresh</span>
+            <span className="hidden md:inline text-[11px]">Restart</span>
           </button>
 
           {onClose && (
             <button
+              id="close-mcq-btn"
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               ✕
             </button>
@@ -184,12 +250,14 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
               Generating exam-grade MCQs for &ldquo;{topic}&rdquo;...
             </p>
           </div>
-        ) : error ? (
+        ) : error && questions.length === 0 ? (
           <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-xs text-rose-700 dark:text-rose-300 space-y-2 text-center">
             <p className="font-semibold">{error}</p>
             <button
+              id="retry-mcq-btn"
+              type="button"
               onClick={() => fetchMCQs(false)}
-              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs inline-flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs inline-flex items-center gap-1 cursor-pointer shadow-xs"
             >
               <RotateCw className="w-3 h-3" />
               <span>Retry</span>
@@ -197,13 +265,37 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
           </div>
         ) : currentQ ? (
           <div className="space-y-4">
+            {/* Batch Error Toast if generation failed */}
+            {batchError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between gap-2 animate-in fade-in">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{batchError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBatchError(null)}
+                  className="text-rose-500 hover:text-rose-700 font-bold px-1.5 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* Question Counter & Meta */}
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">
-              <span className="font-bold text-slate-700 dark:text-slate-300">
-                Question {currentIndex + 1} of {questions.length}
+              <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span>Question {currentIndex + 1} of {questions.length}</span>
+                {questions.length > 3 && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                    Set {Math.floor(currentIndex / 3) + 1}
+                  </span>
+                )}
               </span>
               <div className="flex items-center gap-2">
                 <button
+                  id={`save-mcq-note-${currentIndex}`}
+                  type="button"
                   onClick={() => handleSaveQuestionToNotes(currentIndex)}
                   className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                   title="Save this question & explanation to notes"
@@ -250,6 +342,8 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
                 return (
                   <button
                     key={optIdx}
+                    id={`mcq-opt-${currentIndex}-${optIdx}`}
+                    type="button"
                     onClick={() => handleSelectOption(currentIndex, optIdx)}
                     disabled={isAnswered}
                     className={`w-full p-3 rounded-xl border text-left text-xs transition-all flex items-start gap-3 cursor-pointer ${optClass}`}
@@ -297,8 +391,10 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
             {/* Footer Navigation */}
             <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
+                id="prev-mcq-btn"
+                type="button"
                 onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-                disabled={currentIndex === 0}
+                disabled={currentIndex === 0 || isGeneratingMore}
                 className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -308,6 +404,8 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
               <div className="flex items-center gap-2">
                 {currentIndex < questions.length - 1 ? (
                   <button
+                    id="next-mcq-btn"
+                    type="button"
                     onClick={() => setCurrentIndex((prev) => prev + 1)}
                     className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs transition-colors"
                   >
@@ -316,12 +414,26 @@ export const MCQCard: React.FC<MCQCardProps> = ({ topic, onSaveToNotes, onClose 
                   </button>
                 ) : (
                   <button
+                    id="generate-more-mcqs-btn"
+                    type="button"
                     onClick={() => fetchMCQs(true)}
-                    disabled={isLoading}
-                    className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs transition-colors"
+                    disabled={isGeneratingMore || isLoading}
+                    className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all disabled:opacity-60"
                   >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Generate More MCQs</span>
+                    {isGeneratingMore ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Generating 3 MCQs...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Generate More MCQs</span>
+                        <span className="text-[10px] opacity-80 font-normal bg-emerald-700/60 px-1.5 py-0.2 rounded-md">
+                          1 Query
+                        </span>
+                      </>
+                    )}
                   </button>
                 )}
               </div>

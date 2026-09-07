@@ -121,7 +121,10 @@ export interface BookItem {
 
 export interface VideoItem {
   id: string;
-  videoId: string;
+  videoId?: string;
+  url?: string;
+  videoUrl?: string;
+  link?: string;
   title: string;
   channelTitle: string;
   description: string;

@@ -372,6 +372,16 @@ export async function fetchCategoryData<T = any>(
 
         const data: CategoryApiResponse<T> = await res.json();
 
+        if (category === "videos") {
+          console.log(`[Video API Response] Fetched video data for topic "${topic}":`, {
+            category,
+            count: data.items?.length || 0,
+            items: data.items,
+            pagination: data.pagination,
+            cached: data.cached,
+          });
+        }
+
         // Cache successful response
         clientMemoryCache.set(cacheKey, {
           data,

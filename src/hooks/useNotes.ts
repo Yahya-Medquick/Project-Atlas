@@ -175,24 +175,30 @@ export const useNotes = () => {
     }
 
     try {
-      if (isLoggedIn) {
-        const response = await fetch("/api/notes/compile", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          body: JSON.stringify({ noteIds })
-        });
+      const selectedNotes = notes.filter((n) => noteIds.includes(n.id));
+      const payload: any = {
+        noteIds,
+        notes: selectedNotes.map((n) => ({
+          title: n.title,
+          content: n.content,
+          subject_tag: n.subject_tag || "General"
+        }))
+      };
 
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || "Failed to compile notes.");
-        }
+      const response = await fetch("/api/notes/compile", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(payload)
+      });
 
-        const data = await response.json();
-        return data.compiled;
-      } else {
-        throw new Error("Please log in to compile notes using Gemini AI!");
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to compile notes.");
       }
+
+      const data = await response.json();
+      return data.compiled;
     } catch (err: any) {
       console.error(err);
       throw err;

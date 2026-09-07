@@ -41,6 +41,7 @@ import {
   X,
   Lock,
   Crown,
+  Loader2,
 } from 'lucide-react';
 import { ChatSession, ChatMessage, ChatMode, ConceptSpecs, ExamSpecs, ResearchSpecs } from '../../types/chat';
 import { ExpertPersona, EXPERTS, EXPERTS_PK } from '../../data/experts';
@@ -65,6 +66,7 @@ const ExploreVideosSection: React.FC<{ topic: string; query?: string }> = ({ top
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data && Array.isArray(data.items)) {
+          console.log(`[ExploreVideosSection] Fetched ${data.items.length} videos for topic "${searchQuery}":`, data.items);
           setVideos(data.items);
         }
       })
@@ -80,6 +82,10 @@ const ExploreVideosSection: React.FC<{ topic: string; query?: string }> = ({ top
         <span>Loading YouTube video guides for {topic}...</span>
       </div>
     );
+  }
+
+  if (!videos || videos.length === 0) {
+    return null;
   }
 
   return (
@@ -99,26 +105,55 @@ const ExploreVideosSection: React.FC<{ topic: string; query?: string }> = ({ top
   );
 };
 
-// Helper component for Recent News (backend News API integration)
+// Helper component for Recent News (backend News API integration with pagination)
 const ExploreNewsSection: React.FC<{ topic: string; query?: string }> = ({ topic, query }) => {
   const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const searchQuery = query || topic;
+  const limit = 6;
 
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
-    fetch(`/api/category/news?q=${encodeURIComponent(searchQuery)}`)
+    setPage(1);
+    fetch(`/api/category/news?q=${encodeURIComponent(searchQuery)}&page=1&limit=${limit}&offset=0`)
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data && Array.isArray(data.items)) {
           setNews(data.items);
+          setHasMore(data.pagination?.hasMore ?? (data.items.length >= limit));
         }
       })
       .catch((err) => console.error("Error fetching news:", err))
       .finally(() => { if (isMounted) setLoading(false); });
     return () => { isMounted = false; };
   }, [searchQuery]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const nextOffset = (nextPage - 1) * limit;
+
+    try {
+      const res = await fetch(`/api/category/news?q=${encodeURIComponent(searchQuery)}&page=${nextPage}&limit=${limit}&offset=${nextOffset}`);
+      const data = await res.json();
+      if (data && Array.isArray(data.items) && data.items.length > 0) {
+        setNews((prev) => [...prev, ...data.items]);
+        setPage(nextPage);
+        setHasMore(data.pagination?.hasMore ?? (data.items.length >= limit));
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error("Error loading more news:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -129,19 +164,49 @@ const ExploreNewsSection: React.FC<{ topic: string; query?: string }> = ({ topic
     );
   }
 
+  if (news.length === 0) {
+    return null;
+  }
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200">
         <span className="flex items-center gap-1.5">
           <Newspaper className="w-4 h-4 text-blue-500" />
           Recent News ({topic})
         </span>
+        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+          Showing {news.length} items
+        </span>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {news.slice(0, 4).map((article: any, idx: number) => (
-          <NewsCard key={article.id || idx} article={article} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {news.map((article: any, idx: number) => (
+          <NewsCard key={article.id || `news-card-${idx}`} article={article} />
         ))}
       </div>
+      {hasMore && (
+        <div className="pt-2 flex justify-center">
+          <button
+            id="load-more-chat-news-btn"
+            type="button"
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="px-4 py-2 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/60 rounded-xl transition-all flex items-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+          >
+            {loadingMore ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+                <span>Loading more news...</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3.5 h-3.5" />
+                <span>Load More News</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -638,6 +703,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
               topic={session?.title || 'Core Fundamentals'}
               onSaveToNotes={onSaveToNotes}
               onClose={() => setShowMCQCard(false)}
+              onOpenPaywall={onOpenPaywall}
             />
           </div>
         )}
@@ -1003,6 +1069,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                                         setActiveExploreMsgId(null);
                                         setActiveExploreTab(null);
                                       }}
+                                      onOpenPaywall={onOpenPaywall}
                                     />
                                   )}
                                 </div>
