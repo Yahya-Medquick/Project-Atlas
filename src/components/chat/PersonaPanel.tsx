@@ -21,6 +21,7 @@ import {
   HelpCircle,
   Lock,
   Crown,
+  Pin,
 } from 'lucide-react';
 import { ExpertPersona } from '../../data/experts';
 import { usePersonas } from '../../hooks/usePersonas';
@@ -33,7 +34,7 @@ interface PersonaPanelProps {
   onSelectPersona: (personaId: string, variant: 'global' | 'pk') => void;
   variant: 'global' | 'pk';
   onToggleVariant: (variant: 'global' | 'pk') => void;
-  onOpenPwaShortcut: (persona: ExpertPersona) => void;
+  onOpenPwaShortcut?: (persona: ExpertPersona) => void;
   suggestedPersonaId?: string;
   onSelectPrompt?: (prompt: string) => void;
   onSelectTopic?: (topic: string) => void;
@@ -65,6 +66,31 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+
+  // Pinned personas state with localStorage persistence
+  const [pinnedPersonaIds, setPinnedPersonaIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return ['hamza'];
+    try {
+      const saved = localStorage.getItem('gage_pinned_personas');
+      return saved ? JSON.parse(saved) : ['hamza'];
+    } catch (_) {
+      return ['hamza'];
+    }
+  });
+
+  const togglePinPersona = (personaId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPinnedPersonaIds((prev) => {
+      const isAlreadyPinned = prev.includes(personaId);
+      const next = isAlreadyPinned
+        ? prev.filter((id) => id !== personaId)
+        : [personaId, ...prev];
+      try {
+        localStorage.setItem('gage_pinned_personas', JSON.stringify(next));
+      } catch (_) {}
+      return next;
+    });
+  };
 
   const { user, profile } = useUser();
   const isPaid = user?.tier === 'paid' || user?.tier === 'pro' || user?.tier === 'unlimited';
@@ -108,6 +134,17 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
       return matchName || matchRole || matchBadge || matchSpecialty || matchDomain;
     });
   }, [personaList, selectedCategory, searchQuery]);
+
+  // Sort pinned personas to the top
+  const sortedPersonas = useMemo(() => {
+    return [...filteredPersonas].sort((a, b) => {
+      const aPinned = pinnedPersonaIds.includes(a.id);
+      const bPinned = pinnedPersonaIds.includes(b.id);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      return 0;
+    });
+  }, [filteredPersonas, pinnedPersonaIds]);
 
   // Dynamic suggested prompts based on active persona's specialties
   const dynamicSuggestedPrompts = useMemo(() => {
@@ -158,21 +195,9 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
           </button>
         </div>
 
-        {/* Global vs. Pakistani Region Toggle */}
+        {/* Pakistani vs. Global Region Toggle (Pakistani first) */}
         <div className="p-3 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/40 dark:bg-slate-950/40 shrink-0 space-y-2.5">
           <div className="flex items-center p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
-            <button
-              onClick={() => onToggleVariant('global')}
-              className={`flex-1 py-1.5 px-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                variant === 'global'
-                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Global</span>
-            </button>
-
             <button
               onClick={() => onToggleVariant('pk')}
               className={`flex-1 py-1.5 px-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -183,6 +208,18 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
             >
               <span>🇵🇰</span>
               <span>Pakistani</span>
+            </button>
+
+            <button
+              onClick={() => onToggleVariant('global')}
+              className={`flex-1 py-1.5 px-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                variant === 'global'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Global</span>
             </button>
           </div>
 
@@ -290,14 +327,15 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
 
           {/* Section Divider */}
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 pt-1 flex items-center justify-between">
-            <span>All Specialists ({filteredPersonas.length})</span>
+            <span>All Specialists ({sortedPersonas.length})</span>
             <span className="text-[10px] text-slate-400 font-normal">Click to switch</span>
           </div>
 
-          {/* Persona Cards List */}
-          {filteredPersonas.map((persona) => {
+          {/* Persona Cards List (Sorted with Pinned on Top) */}
+          {sortedPersonas.map((persona) => {
             const isSelected = persona.id === selectedPersonaId;
             const isSuggested = suggestedPersonaId === persona.id;
+            const isPinned = pinnedPersonaIds.includes(persona.id);
 
             return (
               <div
@@ -305,17 +343,28 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
                 onClick={() => onSelectPersona(persona.id, variant)}
                 className={`relative rounded-xl border p-3 cursor-pointer transition-all duration-150 group/card select-none ${
                   isSelected
-                    ? 'bg-white dark:bg-slate-800/95 border-indigo-600 dark:border-indigo-400 shadow-sm ring-1 ring-indigo-500/20'
+                    ? 'bg-white dark:bg-slate-800/95 border-emerald-600 dark:border-emerald-400 shadow-sm ring-1 ring-emerald-500/20'
+                    : isPinned
+                    ? 'bg-amber-50/40 dark:bg-slate-800/80 border-amber-300/80 dark:border-amber-800/60 shadow-2xs'
                     : 'bg-white/80 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 shadow-2xs'
                 }`}
               >
-                {/* Auto-Match Suggestion Ribbon */}
-                {isSuggested && !isSelected && (
-                  <div className="mb-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-[10px] font-bold text-amber-700 dark:text-amber-300">
-                    <Sparkles className="w-2.5 h-2.5" />
-                    <span>Best Topic Match</span>
-                  </div>
-                )}
+                {/* Top Ribbons: Pinned Badge & Auto-Match */}
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  {isPinned && (
+                    <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 text-[9px] font-bold text-amber-700 dark:text-amber-300">
+                      <Pin className="w-2.5 h-2.5 fill-amber-500 rotate-45" />
+                      <span>PINNED ON TOP</span>
+                    </div>
+                  )}
+
+                  {isSuggested && !isSelected && (
+                    <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-[9px] font-bold text-indigo-700 dark:text-indigo-300">
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>Best Topic Match</span>
+                    </div>
+                  )}
+                </div>
 
                 {/* Persona Header: Avatar, Name, Role */}
                 <div className="flex items-start gap-2.5">
@@ -332,7 +381,7 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
                         {persona.name}
                       </h3>
                       {isSelected && (
-                        <span className="flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                        <span className="flex items-center gap-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
                           <CheckCircle2 className="w-3 h-3" /> Active
                         </span>
                       )}
@@ -348,7 +397,7 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
                   </div>
                 </div>
 
-                {/* Badge Tag */}
+                {/* Badge Tag and Pin Action Button */}
                 <div className="mt-2 flex items-center justify-between">
                   <span
                     className="text-[9px] font-bold px-2 py-0.5 rounded-full border"
@@ -361,17 +410,18 @@ export const PersonaPanel: React.FC<PersonaPanelProps> = ({
                     {persona.badge}
                   </span>
 
-                  {/* PWA Shortcut Button */}
+                  {/* Pin Feature Button (replaces shortcut) */}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenPwaShortcut(persona);
-                    }}
-                    className="opacity-0 group-hover/card:opacity-100 p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all text-[10px] flex items-center gap-1 font-medium cursor-pointer"
-                    title="Add shortcut to desktop / home screen"
+                    onClick={(e) => togglePinPersona(persona.id, e)}
+                    className={`p-1 px-1.5 rounded-md text-[10px] flex items-center gap-1 font-semibold transition-all cursor-pointer ${
+                      isPinned
+                        ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shadow-2xs'
+                        : 'opacity-70 sm:opacity-0 group-hover/card:opacity-100 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 border border-slate-200 dark:border-slate-700'
+                    }`}
+                    title={isPinned ? 'Unpin persona from top of list' : 'Pin persona to top of list'}
                   >
-                    <Download className="w-3 h-3" />
-                    <span>Shortcut</span>
+                    <Pin className={`w-3 h-3 ${isPinned ? 'fill-amber-500 text-amber-600 dark:text-amber-400 rotate-45' : ''}`} />
+                    <span>{isPinned ? 'Pinned' : 'Pin'}</span>
                   </button>
                 </div>
 

@@ -521,7 +521,11 @@ export const ChatStage: React.FC<ChatStageProps> = ({
           )}
 
           {/* WhatsApp Group / Contact Profile Pill */}
-          <div className="flex items-center gap-2.5 min-w-0 cursor-default">
+          <div
+            onClick={onToggleRightPanel}
+            className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
+            title="Click to view specialists and switch persona"
+          >
             <div className="relative">
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-xs border border-white/20"

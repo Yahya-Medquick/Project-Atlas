@@ -64,7 +64,7 @@ export default function App() {
   const {
     usage,
     canExecuteQuery,
-    recordQueryExecution,
+    refreshUsage,
     isPaywallOpen,
     triggerPaywall,
     closePaywall,
@@ -81,8 +81,8 @@ export default function App() {
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState<boolean>(() => window.innerWidth >= 1024);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState<boolean>(() => window.innerWidth >= 1280);
 
-  // Active persona region variant ('global' | 'pk')
-  const [expertVariant, setExpertVariant] = useState<'global' | 'pk'>('global');
+  // Active persona region variant ('global' | 'pk') - default to Pakistani first
+  const [expertVariant, setExpertVariant] = useState<'global' | 'pk'>('pk');
 
   // Loading state for Gemini stream
   const [isLoadingMessage, setIsLoadingMessage] = useState<boolean>(false);
@@ -293,7 +293,7 @@ export default function App() {
       }
 
       const data = await response.json();
-      recordQueryExecution();
+      refreshUsage();
 
       const assistantMessage: ChatMessage = {
         id: `msg_${Date.now()}_a`,

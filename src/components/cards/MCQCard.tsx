@@ -53,7 +53,7 @@ export const MCQCard: React.FC<MCQCardProps> = ({
   const [score, setScore] = useState<{ correct: number; totalAnswered: number }>({ correct: 0, totalAnswered: 0 });
 
   const { addNote } = useNotes();
-  const { canExecuteQuery, recordQueryExecution, triggerPaywall, usage } = useQueryLimits();
+  const { canExecuteQuery, refreshUsage, triggerPaywall, usage } = useQueryLimits();
 
   const handleOpenPaywall = () => {
     triggerPaywall();
@@ -64,14 +64,8 @@ export const MCQCard: React.FC<MCQCardProps> = ({
 
   const fetchMCQs = async (isNewBatch = false) => {
     if (isNewBatch) {
-      // 1. Verify query allowance and deduct 1 query limit for the 3 new MCQs
+      // 1. Verify query allowance for the 3 new MCQs
       if (!canExecuteQuery()) {
-        handleOpenPaywall();
-        return;
-      }
-
-      const recorded = recordQueryExecution();
-      if (!recorded) {
         handleOpenPaywall();
         return;
       }
@@ -111,6 +105,7 @@ export const MCQCard: React.FC<MCQCardProps> = ({
             return combined;
           });
           setBatchError(null);
+          refreshUsage();
         } else {
           setQuestions(data.questions);
           setCurrentIndex(0);
