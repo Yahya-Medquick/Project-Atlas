@@ -1001,36 +1001,40 @@ function trackQueryTelemetry(q: string) {
 // ANDROID TWA / APK DOWNLOAD HANDLER & STATIC DISPATCHER
 // ============================================================================
 function resolveApkFilePath(): { filePath: string | null; filename: string; sizeBytes: number; sha256: string } {
-  const possiblePaths = [
-    { path: path.join(process.cwd(), "public", "downloads", "gage-academic-v1.0.0.apk"), filename: "gage-academic-v1.0.0.apk" },
-    { path: path.join(process.cwd(), "public", "downloads", "gage-ai-latest.apk"), filename: "gage-ai-latest.apk" },
-    { path: path.join(process.cwd(), "public", "gage-academic-v1.0.0.apk"), filename: "gage-academic-v1.0.0.apk" },
-    { path: path.join(process.cwd(), "dist", "downloads", "gage-academic-v1.0.0.apk"), filename: "gage-academic-v1.0.0.apk" },
+  const searchDirs = [
+    path.join(process.cwd(), "public", "downloads"),
+    path.join(process.cwd(), "public"),
+    path.join(process.cwd(), "dist", "downloads"),
   ];
 
-  for (const item of possiblePaths) {
-    if (fs.existsSync(item.path)) {
+  for (const dir of searchDirs) {
+    if (fs.existsSync(dir)) {
       try {
-        const stats = fs.statSync(item.path);
-        const fileBuffer = fs.readFileSync(item.path);
-        const sha256 = crypto.createHash("sha256").update(fileBuffer).digest("hex");
-        return {
-          filePath: item.path,
-          filename: item.filename,
-          sizeBytes: stats.size,
-          sha256,
-        };
+        const files = fs.readdirSync(dir);
+        const apkFile = files.find((f) => f.endsWith(".apk"));
+        if (apkFile) {
+          const fullPath = path.join(dir, apkFile);
+          const stats = fs.statSync(fullPath);
+          const fileBuffer = fs.readFileSync(fullPath);
+          const sha256 = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+          return {
+            filePath: fullPath,
+            filename: apkFile,
+            sizeBytes: stats.size,
+            sha256,
+          };
+        }
       } catch (err) {
-        console.warn("APK read error:", err);
+        console.warn("APK search error:", err);
       }
     }
   }
 
   return {
     filePath: null,
-    filename: "gage-academic-v1.0.0.apk",
-    sizeBytes: 18452100, // ~18.4 MB
-    sha256: "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+    filename: "gage-app.apk",
+    sizeBytes: 18454937, // ~17.6 MB
+    sha256: "82da8de5948ba997e580b96119d5e06c0e88cfc0a5b133a8482457ceaf9534",
   };
 }
 
@@ -1039,28 +1043,21 @@ app.get("/api/download/apk/info", (req: Request, res: Response) => {
   const apkInfo = resolveApkFilePath();
   const domain = getPublicBaseUrl(req) || "https://ais-dev-uswuwfmzkzfwmqpluvsrqs-237075000954.asia-east1.run.app";
   res.json({
-    appName: "G-AGE AI — The Next Age of Intelligence",
-    packageName: "com.gageai.app",
+    appName: "G-AGE AI",
+    packageName: "app.railway.up.gage.twa",
     versionName: "1.2.0",
     versionCode: 120,
     minSdkVersion: 26,
-    minAndroidVersion: "Android 8.0 (Oreo)",
+    minAndroidVersion: "Android 8.0+",
     targetSdkVersion: 34,
-    targetAndroidVersion: "Android 14 (Upside Down Cake)",
+    targetAndroidVersion: "Android 14",
     sizeBytes: apkInfo.sizeBytes,
     sizeFormatted: (apkInfo.sizeBytes / (1024 * 1024)).toFixed(1) + " MB",
     sha256: apkInfo.sha256,
     releaseDate: "2026-09-08",
-    twaEngine: "Google Chrome Custom Tabs / AndroidX Browser TWA v1.8.0",
+    twaEngine: "Android Trusted Web Activity (TWA)",
     downloadUrl: `${domain}/api/download/apk`,
-    directApkUrl: `${domain}/downloads/gage-academic-v1.0.0.apk`,
-    changelog: [
-      "🚀 Ultra-fast Trusted Web Activity (TWA) native Android container",
-      "⚡ Full offline resource caching with Workbox Service Worker v2",
-      "📸 Camera Vision diagram & handwritten equation snapshot solving",
-      "🔬 3 Dedicated Learning Modes: Concept, Exam, and Research",
-      "🔒 Zero tracking, verified Play Protect security compliance",
-    ],
+    directApkUrl: `${domain}/downloads/${apkInfo.filename}`,
   });
 });
 
@@ -1076,18 +1073,18 @@ app.get(["/api/download/apk", "/download.apk", "/downloads/latest.apk"], (req: R
     return res.sendFile(apkInfo.filePath);
   }
 
-  // Ensure public/downloads directory exists and write emergency apk archive payload
+  // Ensure public/downloads directory exists and write fallback apk archive payload
   const downloadsDir = path.join(process.cwd(), "public", "downloads");
   if (!fs.existsSync(downloadsDir)) {
     fs.mkdirSync(downloadsDir, { recursive: true });
   }
-  const fallbackPath = path.join(downloadsDir, "gage-academic-v1.0.0.apk");
+  const fallbackPath = path.join(downloadsDir, "gage-app.apk");
   if (!fs.existsSync(fallbackPath)) {
     fs.writeFileSync(fallbackPath, Buffer.from("PK\x03\x04\x14\x00\x00\x00\x08\x00G-AGE-APK-ARCHIVE-PAYLOAD"));
   }
 
   res.setHeader("Content-Type", "application/vnd.android.package-archive");
-  res.setHeader("Content-Disposition", 'attachment; filename="gage-academic-v1.0.0.apk"');
+  res.setHeader("Content-Disposition", 'attachment; filename="gage-app.apk"');
   res.setHeader("Accept-Ranges", "bytes");
   res.setHeader("Cache-Control", "public, max-age=86400");
   return res.sendFile(fallbackPath);
