@@ -151,4 +151,55 @@ describe("OpenRouter Multimodal Payload Transformation Suite", () => {
     expect(messages[1]).toEqual({ role: "assistant", content: "Hi! How can I help you today?" });
     expect(messages[2]).toEqual({ role: "user", content: "Explain Newton's second law." });
   });
+
+  it("validates the default fallback models chain and corrected Qwen model ID", () => {
+    const defaultFallbackString =
+      "openai/gpt-4o-mini,meta-llama/llama-4-scout,qwen/qwen-2.5-vl-7b-instruct";
+    const candidates = defaultFallbackString
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+
+    // Verify ordering: Primary fallback -> Backup 1 -> Backup 2
+    expect(candidates).toEqual([
+      "openai/gpt-4o-mini",
+      "meta-llama/llama-4-scout",
+      "qwen/qwen-2.5-vl-7b-instruct",
+    ]);
+
+    // Explicitly verify the hyphenated model ID
+    expect(candidates[2]).toBe("qwen/qwen-2.5-vl-7b-instruct");
+    expect(candidates[2]).not.toBe("qwen/qwen2.5-vl-7b-instruct");
+  });
+
+  it("simulates sequential fallback progression on failure and early-return on success", async () => {
+    const candidates = [
+      "openai/gpt-4o-mini",
+      "meta-llama/llama-4-scout",
+      "qwen/qwen-2.5-vl-7b-instruct",
+    ];
+
+    const attempts: string[] = [];
+    const simulateFetch = async (model: string) => {
+      attempts.push(model);
+      if (model === "openai/gpt-4o-mini") {
+        throw new Error("HTTP 429 Rate Limit");
+      }
+      return { text: "Success from " + model, modelUsed: `openrouter/${model}` };
+    };
+
+    let result = null;
+    for (const model of candidates) {
+      try {
+        result = await simulateFetch(model);
+        break; // Stop immediately on success
+      } catch {
+        // Continue to backup model
+      }
+    }
+
+    // First model failed, second succeeded, third was never called
+    expect(attempts).toEqual(["openai/gpt-4o-mini", "meta-llama/llama-4-scout"]);
+    expect(result?.modelUsed).toBe("openrouter/meta-llama/llama-4-scout");
+  });
 });

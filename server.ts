@@ -1585,11 +1585,11 @@ async function callOpenRouterFallback(options: GeminiFallbackOptions): Promise<G
     throw new Error("OPENROUTER_API_KEY is not configured in environment.");
   }
 
-  // Model selection: Use cheap vision-capable model (defaults to openai/gpt-4o-mini, supports meta-llama/llama-4-scout)
+  // Model selection: Use cheap vision-capable model (defaults to openai/gpt-4o-mini, supports meta-llama/llama-4-scout, qwen/qwen-2.5-vl-7b-instruct)
   const candidateListStr =
     process.env.OPENROUTER_FALLBACK_MODELS ||
     process.env.OPENROUTER_MODEL ||
-    "openai/gpt-4o-mini,meta-llama/llama-4-scout,google/gemini-2.5-flash";
+    "openai/gpt-4o-mini,meta-llama/llama-4-scout,qwen/qwen-2.5-vl-7b-instruct";
 
   const modelCandidates = candidateListStr
     .split(",")
@@ -1621,6 +1621,8 @@ async function callOpenRouterFallback(options: GeminiFallbackOptions): Promise<G
       }
 
       const appUrl = process.env.APP_URL || process.env.PUBLIC_BASE_URL || "https://gage-ai.com";
+
+      console.log(`[OpenRouter Fallback] Requesting model: '${model}'`);
 
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -7624,6 +7626,10 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 G-AGE AI Engine running on http://localhost:${PORT}`);
+    const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
+    const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim());
+    console.log(`[Startup Key Check] GEMINI_API_KEY: ${hasGeminiKey ? "PRESENT (configured)" : "MISSING (empty)"}`);
+    console.log(`[Startup Key Check] OPENROUTER_API_KEY: ${hasOpenRouterKey ? "PRESENT (configured)" : "MISSING (empty)"}`);
   });
 }
 
