@@ -1365,7 +1365,9 @@ function getGemini(): GoogleGenAI | null {
 }
 
 // ----------------------------------------------------------------------
-// CENTRALIZED MULTI-KEY & MODEL FALLBACK CHAIN ENGINE
+// ============================================================================
+// PRIMARY AI PROVIDER: GEMINI MULTI-KEY & MODEL ENGINE
+// ============================================================================
 // Model Fallback Chain: Gemini 3.6 Flash -> Gemini 3.5 Flash -> Gemini 3.5 Flash-Lite -> Gemini 3.1 Flash-Lite
 // ----------------------------------------------------------------------
 const GEMINI_MODEL_CHAIN = [
@@ -1389,71 +1391,361 @@ export interface GeminiFallbackResult {
   isBackupModel: boolean;
   keyIndexUsed: number;
   totalKeysTried: number;
+  provider?: "gemini" | "openrouter";
 }
 
-async function callGeminiWithFallback(options: GeminiFallbackOptions): Promise<GeminiFallbackResult> {
+/**
+ * Executes the primary Gemini call across the key ring and model chain with timeout enforcement.
+ */
+async function executeGeminiCallWithTimeout(
+  options: GeminiFallbackOptions,
+  timeoutMs = 9000
+): Promise<GeminiFallbackResult> {
   const keys = getGeminiApiKeys();
   if (keys.length === 0) {
     throw new Error("No Gemini API keys configured in environment secrets.");
   }
 
-  let lastError: any = null;
-  let totalKeysTried = 0;
+  let timerId: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => {
+      reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
 
-  for (const modelName of GEMINI_MODEL_CHAIN) {
-    for (let keyIdx = 0; keyIdx < keys.length; keyIdx++) {
-      const apiKey = keys[keyIdx];
-      totalKeysTried++;
-      try {
-        const client = new GoogleGenAI({
-          apiKey,
-          httpOptions: {
-            headers: {
-              "User-Agent": "aistudio-build",
+  const executionPromise = (async (): Promise<GeminiFallbackResult> => {
+    let lastError: any = null;
+    let totalKeysTried = 0;
+
+    for (const modelName of GEMINI_MODEL_CHAIN) {
+      for (let keyIdx = 0; keyIdx < keys.length; keyIdx++) {
+        const apiKey = keys[keyIdx];
+        totalKeysTried++;
+        try {
+          const client = new GoogleGenAI({
+            apiKey,
+            httpOptions: {
+              headers: {
+                "User-Agent": "aistudio-build",
+              },
             },
-          },
-        });
+          });
 
-        apiCallStats.gemini++;
+          apiCallStats.gemini++;
 
-        const reqConfig: any = {};
-        if (options.responseMimeType) {
-          reqConfig.responseMimeType = options.responseMimeType;
-        }
-        if (options.systemInstruction) {
-          reqConfig.systemInstruction = options.systemInstruction;
-        }
-        if (options.responseSchema) {
-          reqConfig.responseSchema = options.responseSchema;
-        }
-        if (options.tools) {
-          reqConfig.tools = options.tools;
-        }
+          const reqConfig: any = {};
+          if (options.responseMimeType) {
+            reqConfig.responseMimeType = options.responseMimeType;
+          }
+          if (options.systemInstruction) {
+            reqConfig.systemInstruction = options.systemInstruction;
+          }
+          if (options.responseSchema) {
+            reqConfig.responseSchema = options.responseSchema;
+          }
+          if (options.tools) {
+            reqConfig.tools = options.tools;
+          }
 
-        const response = await client.models.generateContent({
-          model: modelName,
-          contents: options.contents,
-          config: Object.keys(reqConfig).length > 0 ? reqConfig : undefined,
-        });
+          const response = await client.models.generateContent({
+            model: modelName,
+            contents: options.contents,
+            config: Object.keys(reqConfig).length > 0 ? reqConfig : undefined,
+          });
 
-        if (response && response.text) {
-          const isBackupModel = modelName !== GEMINI_MODEL_CHAIN[0] || keyIdx > 0;
-          return {
-            text: response.text,
-            modelUsed: modelName,
-            isBackupModel,
-            keyIndexUsed: keyIdx,
-            totalKeysTried,
-          };
+          if (response && response.text) {
+            const isBackupModel = modelName !== GEMINI_MODEL_CHAIN[0] || keyIdx > 0;
+            return {
+              text: response.text,
+              modelUsed: modelName,
+              isBackupModel,
+              keyIndexUsed: keyIdx,
+              totalKeysTried,
+              provider: "gemini",
+            };
+          }
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[Gemini Fallback Chain] Model '${modelName}' with Key #${keyIdx + 1} failed: ${err?.message || err}`);
         }
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[Gemini Fallback Chain] Model '${modelName}' with Key #${keyIdx + 1} failed: ${err?.message || err}`);
+      }
+    }
+
+    throw lastError || new Error("All Gemini API keys and fallback models failed to generate a response.");
+  })();
+
+  try {
+    return await Promise.race([executionPromise, timeoutPromise]);
+  } finally {
+    if (timerId) clearTimeout(timerId);
+  }
+}
+
+// ============================================================================
+// FALLBACK AI PROVIDER: OPENROUTER ENGINE (VISION-CAPABLE & TOKEN-EFFICIENT)
+// ============================================================================
+
+/**
+ * Normalizes multimodal and text content from Gemini SDK format to OpenRouter / OpenAI format.
+ * Supports image attachments (base64 inlineData, image_url, imageBase64 strings) and structured prompts.
+ */
+function convertGeminiContentsToOpenRouterMessages(
+  contents: any,
+  systemInstruction?: string
+): Array<{ role: string; content: any }> {
+  const messages: Array<{ role: string; content: any }> = [];
+
+  if (systemInstruction && typeof systemInstruction === "string" && systemInstruction.trim()) {
+    messages.push({
+      role: "system",
+      content: systemInstruction.trim(),
+    });
+  }
+
+  // 1. Plain string prompt
+  if (typeof contents === "string") {
+    messages.push({
+      role: "user",
+      content: contents,
+    });
+    return messages;
+  }
+
+  // 2. Array of messages or parts
+  if (Array.isArray(contents)) {
+    for (const item of contents) {
+      if (typeof item === "string") {
+        messages.push({ role: "user", content: item });
+        continue;
+      }
+
+      const role = item.role === "model" || item.role === "assistant" ? "assistant" : "user";
+
+      // If item contains parts array (Gemini SDK format)
+      if (Array.isArray(item.parts)) {
+        const hasImages = item.parts.some(
+          (p: any) => p.inlineData || p.imageBase64 || p.image_url || p.data
+        );
+
+        if (hasImages) {
+          const contentBlocks: any[] = [];
+          for (const part of item.parts) {
+            if (part.text && typeof part.text === "string") {
+              contentBlocks.push({ type: "text", text: part.text });
+            } else if (part.inlineData && part.inlineData.data) {
+              const mimeType = part.inlineData.mimeType || "image/jpeg";
+              const rawData = part.inlineData.data;
+              const url = rawData.startsWith("data:") ? rawData : `data:${mimeType};base64,${rawData}`;
+              contentBlocks.push({
+                type: "image_url",
+                image_url: { url },
+              });
+            } else if (part.imageBase64 && typeof part.imageBase64 === "string") {
+              const url = part.imageBase64.startsWith("data:")
+                ? part.imageBase64
+                : `data:image/jpeg;base64,${part.imageBase64}`;
+              contentBlocks.push({
+                type: "image_url",
+                image_url: { url },
+              });
+            } else if (part.image_url) {
+              contentBlocks.push({
+                type: "image_url",
+                image_url: typeof part.image_url === "string" ? { url: part.image_url } : part.image_url,
+              });
+            }
+          }
+          messages.push({ role, content: contentBlocks.length > 0 ? contentBlocks : "" });
+        } else {
+          // Plain text parts
+          const textContent = item.parts
+            .map((p: any) => (typeof p === "string" ? p : p.text || ""))
+            .filter(Boolean)
+            .join("\n");
+          messages.push({ role, content: textContent || "" });
+        }
+      } else if (item.content) {
+        messages.push({ role, content: item.content });
+      } else if (item.text) {
+        messages.push({ role, content: item.text });
       }
     }
   }
 
-  throw lastError || new Error("All Gemini API keys and fallback models failed to generate a response.");
+  return messages;
+}
+
+/**
+ * Executes fallback call via OpenRouter with cheap, fast, vision-capable models.
+ */
+async function callOpenRouterFallback(options: GeminiFallbackOptions): Promise<GeminiFallbackResult> {
+  const apiKey = (process.env.OPENROUTER_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY is not configured in environment.");
+  }
+
+  // Model selection: Use cheap vision-capable model (defaults to openai/gpt-4o-mini, supports meta-llama/llama-4-scout)
+  const candidateListStr =
+    process.env.OPENROUTER_FALLBACK_MODELS ||
+    process.env.OPENROUTER_MODEL ||
+    "openai/gpt-4o-mini,meta-llama/llama-4-scout,google/gemini-2.5-flash";
+
+  const modelCandidates = candidateListStr
+    .split(",")
+    .map((m) => m.trim())
+    .filter(Boolean);
+
+  const messages = convertGeminiContentsToOpenRouterMessages(options.contents, options.systemInstruction);
+
+  let lastOpenRouterErr: any = null;
+
+  for (const model of modelCandidates) {
+    const startTime = Date.now();
+    let controller: AbortController | null = null;
+    let timeout: NodeJS.Timeout | null = null;
+
+    try {
+      controller = new AbortController();
+      timeout = setTimeout(() => controller?.abort(), 12000); // 12-second OpenRouter timeout
+
+      const requestBody: any = {
+        model,
+        messages,
+        max_tokens: 1500, // Token-efficient for ~500 token typical responses
+        temperature: 0.7,
+      };
+
+      if (options.responseMimeType === "application/json") {
+        requestBody.response_format = { type: "json_object" };
+      }
+
+      const appUrl = process.env.APP_URL || process.env.PUBLIC_BASE_URL || "https://gage-ai.com";
+
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": appUrl,
+          "X-Title": "G-AGE AI Engine",
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`OpenRouter HTTP ${res.status} (${model}): ${errText}`);
+      }
+
+      const json = await res.json();
+      const choice = json.choices?.[0];
+      const replyText = choice?.message?.content || "";
+      const durationMs = Date.now() - startTime;
+
+      if (!replyText || typeof replyText !== "string") {
+        throw new Error(`Invalid or empty content in OpenRouter response from model '${model}'`);
+      }
+
+      // Internal Server Log (Provider & Cost/Latency tracking, not leaked to user)
+      const promptTokens = json.usage?.prompt_tokens ?? "N/A";
+      const completionTokens = json.usage?.completion_tokens ?? "N/A";
+      console.log(
+        `[AI Provider Tracking] Request fulfilled by: OPENROUTER | Model: '${model}' | Tokens: (prompt: ${promptTokens}, completion: ${completionTokens}) | Latency: ${durationMs}ms`
+      );
+
+      return {
+        text: replyText,
+        modelUsed: `openrouter/${model}`,
+        isBackupModel: true,
+        keyIndexUsed: -1,
+        totalKeysTried: 1,
+        provider: "openrouter",
+      };
+    } catch (err: any) {
+      lastOpenRouterErr = err;
+      console.warn(`[OpenRouter Fallback] Model '${model}' attempt failed: ${err?.message || err}`);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  throw lastOpenRouterErr || new Error("All OpenRouter fallback models failed to generate a response.");
+}
+
+// ============================================================================
+// UNIFIED AI DISPATCHER WITH RETRY & AUTOMATIC OPENROUTER FALLBACK
+// ============================================================================
+
+/**
+ * Central AI invocation entry point:
+ * 1. Primary path: Attempts Gemini multi-key & model chain with 9-second timeout.
+ * 2. Retry logic: Automatically retries once on transient Gemini failure.
+ * 3. Fallback path: If Gemini fails (rate limit, timeout, invalid keys, 4xx/5xx),
+ *    automatically invokes OpenRouter with cheap vision-capable model.
+ * 4. Normalizes the response shape for zero frontend leakage.
+ */
+async function callGeminiWithFallback(options: GeminiFallbackOptions): Promise<GeminiFallbackResult> {
+  const geminiKeys = getGeminiApiKeys();
+  let geminiLastError: any = null;
+
+  // 1. PRIMARY PATH: Gemini API with Retry-Once and Timeout
+  if (geminiKeys.length > 0) {
+    const maxGeminiAttempts = 2; // Basic retry-once logic (Attempt 1 -> Retry Attempt 2)
+    for (let attempt = 1; attempt <= maxGeminiAttempts; attempt++) {
+      try {
+        const startTime = Date.now();
+        // Wrap primary Gemini execution in strict timeout (8-10 seconds per attempt)
+        const geminiResult = await executeGeminiCallWithTimeout(options, 9000);
+        const durationMs = Date.now() - startTime;
+
+        // Internal telemetry logging for provider tracking
+        console.log(
+          `[AI Provider Tracking] Request fulfilled by: GEMINI | Model: '${geminiResult.modelUsed}' | KeyIndex: ${geminiResult.keyIndexUsed} | Attempt: ${attempt}/${maxGeminiAttempts} | Latency: ${durationMs}ms`
+        );
+
+        return {
+          ...geminiResult,
+          provider: "gemini",
+        };
+      } catch (err: any) {
+        geminiLastError = err;
+        console.warn(
+          `[Gemini Attempt ${attempt}/${maxGeminiAttempts} Failed] Reason: ${err?.message || err}`
+        );
+
+        if (attempt < maxGeminiAttempts) {
+          // Brief exponential backoff before second Gemini retry attempt
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+      }
+    }
+  } else {
+    geminiLastError = new Error("No Gemini API keys configured in environment.");
+  }
+
+  // ============================================================================
+  // FALLBACK PATH: OPENROUTER API FALLBACK (VISION-CAPABLE & TOKEN-EFFICIENT)
+  // ============================================================================
+  const openRouterKey = (process.env.OPENROUTER_API_KEY || "").trim();
+  if (openRouterKey) {
+    console.warn(
+      `[AI Integration Layer] Primary Gemini pipeline failed (${geminiLastError?.message || "All keys exhausted"}). Activating OpenRouter fallback...`
+    );
+    try {
+      return await callOpenRouterFallback(options);
+    } catch (openRouterErr: any) {
+      console.error(
+        `[AI Integration Layer] OpenRouter fallback also failed: ${openRouterErr?.message || openRouterErr}`
+      );
+      throw new Error(
+        `AI service temporarily unavailable. (Primary: ${geminiLastError?.message || "failed"}, Fallback: ${openRouterErr?.message || "failed"})`
+      );
+    }
+  }
+
+  // If no OpenRouter key was provided and Gemini failed, rethrow primary error
+  throw geminiLastError || new Error("All Gemini API keys and fallback models failed to generate a response.");
 }
 
 // Utility: Native fetch with timeout + telemetry
