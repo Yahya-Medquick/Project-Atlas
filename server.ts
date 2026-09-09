@@ -873,8 +873,9 @@ async function fetchWithRetry<T>(
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-// Security: JSON Body Payload Size Limit (Mitigates DoS via large payloads)
-app.use(express.json({ limit: "100kb" }));
+// Security & Payload Limits: Increased from 100kb to 10mb to reliably support multimodal image attachments & rich chats
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
 // Security: HTTP Response Headers (Helmet Equivalent)
@@ -3841,8 +3842,17 @@ app.post("/api/chat/message", counselRateLimiter, async (req: Request, res: Resp
       }
     }
 
+    // Server-side context windowing: Keep up to last 12 messages; only retain image payload on the most recent 2 user messages
+    const windowedMessages = messages.slice(-12).map((m: any, idx: number, arr: any[]) => {
+      const isRecent = idx >= arr.length - 2;
+      return {
+        ...m,
+        imageBase64: isRecent ? m.imageBase64 : undefined,
+      };
+    });
+
     // Map messages to Gemini contents format with multimodal vision support
-    const contents = messages.map((m: any) => {
+    const contents = windowedMessages.map((m: any) => {
       const parts: any[] = [];
       if (m.imageBase64 && typeof m.imageBase64 === "string" && m.imageBase64.length > 50) {
         try {
@@ -3878,7 +3888,22 @@ app.post("/api/chat/message", counselRateLimiter, async (req: Request, res: Resp
       timestamp: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     });
   } catch (error: any) {
-    console.error("Chat API Error:", error);
+    const rawLen = req.headers["content-length"] || JSON.stringify(req.body || {}).length;
+    const payloadSizeKb = (Number(rawLen) / 1024).toFixed(2);
+
+    if (error?.status === 413 || error?.statusCode === 413 || error?.type === "entity.too.large") {
+      console.error(
+        `[CRITICAL 413] Payload too large in /api/chat/message. Request Size: ${payloadSizeKb} KB. Error:`,
+        error.message || error
+      );
+      return res.status(413).json({
+        error: `Payload too large (${payloadSizeKb} KB). Max limit is 10 MB.`,
+        code: "PAYLOAD_TOO_LARGE",
+        payloadSizeKb,
+      });
+    }
+
+    console.error(`Chat API Error (Payload Size: ${payloadSizeKb} KB):`, error);
     return res.status(500).json({ error: error.message || "Failed to generate chat response." });
   }
 });
@@ -7555,13 +7580,29 @@ app.get("/sitemap.xml", async (req: Request, res: Response) => {
   res.send(sitemapXml);
 });
 
-// Centralized Error Handling Middleware (Prevents Sensitive Stack Leakage)
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error("Unhandled Security Error Handler:", err);
+// Centralized Error Handling Middleware (Catches body-parser errors such as 413 Payload Too Large)
+app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
   const status = err.status || err.statusCode || 500;
+  const rawLen = req.headers["content-length"] || "unknown";
+  const sizeKb = rawLen !== "unknown" ? (Number(rawLen) / 1024).toFixed(2) + " KB" : "unknown";
+
+  if (status === 413 || err.type === "entity.too.large") {
+    console.error(
+      `[CRITICAL 413: PAYLOAD TOO LARGE] ${req.method} ${req.originalUrl || req.url} - Request Content-Length: ${sizeKb}. Limit is 10MB. Error:`,
+      err.message || err
+    );
+    return res.status(413).json({
+      error: `Payload too large (${sizeKb}). Maximum allowed request payload size is 10 MB.`,
+      code: "PAYLOAD_TOO_LARGE",
+      requestSize: sizeKb,
+      limit: "10MB",
+    });
+  }
+
+  console.error(`Unhandled Error Handler [HTTP ${status}]:`, err.message || err);
   res.status(status).json({
-    error: "Internal Server Error",
-    message: process.env.NODE_ENV === "production" ? "An internal server error occurred." : (err.message || "Unknown error"),
+    error: status === 404 ? "Not Found" : "Internal Server Error",
+    message: process.env.NODE_ENV === "production" && status === 500 ? "An internal server error occurred." : (err.message || "Unknown error"),
   });
 });
 

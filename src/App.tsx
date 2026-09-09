@@ -311,6 +311,16 @@ export default function App() {
     updateSessionMessages(currentSession.id, newMessages, newTitle);
     setIsLoadingMessage(true);
 
+    // Maintain optimal context window (send last 12 messages; only retain base64 image on the most recent 2 user messages)
+    const sanitizedContextMessages = newMessages.slice(-12).map((m, idx, arr) => {
+      const isRecentImage = idx >= arr.length - 2;
+      return {
+        role: m.role,
+        content: m.content,
+        imageBase64: isRecentImage ? m.imageBase64 : undefined,
+      };
+    });
+
     try {
       const response = await fetch('/api/chat/message', {
         method: 'POST',
@@ -321,12 +331,16 @@ export default function App() {
           mode: targetMode,
           specs: currentSession.specs || {},
           variant: currentSession.variant || expertVariant,
-          messages: newMessages.map((m) => ({ role: m.role, content: m.content, imageBase64: m.imageBase64 })),
+          messages: sanitizedContextMessages,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        if (response.status === 413) {
+          console.error(`[413 Payload Too Large Error]: ${errorData.error || 'Request body exceeded limit'}`);
+          throw new Error(errorData.error || 'The image or message payload is too large. Please upload a smaller image.');
+        }
         if (response.status === 429 || response.status === 403 || errorData.isPaywall) {
           triggerPaywall();
           throw new Error(errorData.error || 'Query limit reached. Upgrade to Pro.');

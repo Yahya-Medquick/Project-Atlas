@@ -52,6 +52,7 @@ import { MCQCard } from '../cards/MCQCard';
 import { VideoCard } from '../cards/VideoCard';
 import { NewsCard } from '../cards/NewsCard';
 import { MultiLevelDefinitionCard } from '../MultiLevelDefinitionCard';
+import { compressAndResizeImage } from '../../utils/imageCompressor';
 
 // Helper component for YouTube Video Guides (backend YouTube Data API integration)
 const ExploreVideosSection: React.FC<{ topic: string; query?: string }> = ({ topic, query }) => {
@@ -314,7 +315,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     }
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -322,11 +323,18 @@ export const ChatStage: React.FC<ChatStageProps> = ({
       return;
     }
     setImageFileName(file.name);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setAttachedImage(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Compress and scale down to max 1600px width/height and 80% JPEG quality
+      const compressed = await compressAndResizeImage(file, 1600, 1600, 0.82);
+      setAttachedImage(compressed);
+    } catch (err) {
+      console.warn('Image compression fallback to standard reader:', err);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAttachedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
     e.target.value = '';
   };
 

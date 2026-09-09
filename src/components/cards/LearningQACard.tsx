@@ -19,6 +19,7 @@ import {
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { useNotes } from "../../hooks/useNotes";
 import { useUser } from "../../context/UserContext";
+import { compressAndResizeImage } from "../../utils/imageCompressor";
 
 interface MCQ {
   question: string;
@@ -93,7 +94,7 @@ export const LearningQACard: React.FC = () => {
   const zone = getDifficultyZone(difficulty);
 
   // File Upload Handlers
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
     if (!isPaid) {
       setError("Image Reading & Diagram Analysis is a Pro feature. Please upgrade to G-AGE Pro to upload diagrams and handwritten notes.");
       return;
@@ -102,12 +103,19 @@ export const LearningQACard: React.FC = () => {
       setError("Please upload an image file.");
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImageBase64(reader.result as string);
+    try {
+      const compressed = await compressAndResizeImage(file, 1600, 1600, 0.82);
+      setImageBase64(compressed);
       setError(null);
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.warn("Falling back to standard reader for QA image upload:", err);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageBase64(reader.result as string);
+        setError(null);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
