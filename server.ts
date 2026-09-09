@@ -6953,7 +6953,7 @@ function getPublicBaseUrl(req?: Request): string {
     const proto = req.get("x-forwarded-proto") || req.protocol || "https";
     if (host) return `${proto}://${host}`;
   }
-  return "https://bifrostai.up.railway.app";
+  return "https://gageai.org";
 }
 
 // Helper functions for SEO Meta Injection
@@ -7206,11 +7206,12 @@ app.get("/topic/:slug", async (req: Request, res: Response) => {
 });
 
 // Dynamic SEO Routes: robots.txt and sitemap.xml (Steps 3 & 4)
-app.get("/robots.txt", (_req: Request, res: Response) => {
+app.get("/robots.txt", (req: Request, res: Response) => {
+  const domain = getPublicBaseUrl(req) || "https://gageai.org";
   res.setHeader("Content-Type", "text/plain");
   res.send(`User-agent: *
 Allow: /
-Sitemap: https://bifrostai.up.railway.app/sitemap.xml
+Sitemap: ${domain.includes("gageai.org") ? "https://gageai.org/sitemap.xml" : `${domain}/sitemap.xml`}
 `);
 });
 

@@ -21,7 +21,7 @@ Copy `.env.example` to `.env` or set environment variables in your container dep
 ```env
 NODE_ENV="production"
 PORT=3000
-APP_URL="https://bifrostai.up.railway.app"
+APP_URL="https://gageai.org"
 GEMINI_API_KEY="your-gemini-api-key"
 ADMIN_TOKEN="your-custom-secure-admin-token"
 OPENALEX_MAILTO="admin@your-domain.com"

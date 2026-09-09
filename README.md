@@ -2,7 +2,7 @@
 
 > **G-AGE AI** is an enterprise-grade intelligent knowledge exploration platform that organizes human knowledge into structured, interactive multi-dimensional categories across peer-reviewed scholarly literature, open-source codebases, AI synthesis, and interactive physics sandboxes.
 >
-> 🚀 **Live Production Link:** [bifrostai.up.railway.app](https://bifrostai.up.railway.app)
+> 🚀 **Live Production Link:** [gageai.org](https://gageai.org)
 > 📦 **GitHub Repository:** Hosted on GitHub for version control and CI/CD.
 
 ---
