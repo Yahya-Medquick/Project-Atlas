@@ -64,8 +64,12 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(255),
     avatar_url TEXT,
     tier VARCHAR(50) DEFAULT 'free',
+    has_seen_onboarding BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Ensure has_seen_onboarding column exists for migration
+ALTER TABLE users ADD COLUMN IF NOT EXISTS has_seen_onboarding BOOLEAN DEFAULT FALSE;
 
 -- 6. User Tab Usage Table (Daily usage limits for access control)
 CREATE TABLE IF NOT EXISTS user_tab_usage (

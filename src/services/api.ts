@@ -254,6 +254,22 @@ export async function updatePreferencesMode(mode: "research" | "learning") {
   }
 }
 
+export async function updateOnboardingStatus(hasSeenOnboarding = true) {
+  try {
+    const res = await fetch("/api/user/onboarding", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ has_seen_onboarding: hasSeenOnboarding }),
+    });
+    if (!res.ok) throw new Error("Failed to update onboarding status");
+    return await res.json();
+  } catch (err) {
+    console.warn("updateOnboardingStatus error:", err);
+    return null;
+  }
+}
+
 /**
  * Invalidate client cache entries for a specific category, topic, or all
  */

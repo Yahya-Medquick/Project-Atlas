@@ -23,6 +23,7 @@ export interface UserAuth {
   name?: string;
   avatar_url?: string;
   tier: 'free' | 'logged_out' | 'paid' | 'pro' | 'unlimited';
+  has_seen_onboarding?: boolean;
   created_at?: string;
   preferred_mode?: 'research' | 'learning';
   is_guest?: boolean;

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, User, History, Settings, Check, Shield, Search, Sparkles } from "lucide-react";
+import { X, User, History, Settings, Check, Shield, Search, Sparkles, Compass, Smartphone, Download } from "lucide-react";
 import { UserProfile } from "../types";
 import { useUser } from "../context/UserContext";
 
@@ -9,6 +9,7 @@ interface UserProfileModalProps {
   recentSearches: string[];
   onSelectSearch: (query: string) => void;
   onClearHistory: () => void;
+  onOpenDownload?: () => void;
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -17,13 +18,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   recentSearches,
   onSelectSearch,
   onClearHistory,
+  onOpenDownload,
 }) => {
-  const { user, profile, updatePreferences } = useUser();
+  const { user, profile, updatePreferences, replayTour } = useUser();
   const [activeTab, setActiveTab] = useState<"profile" | "history" | "preferences">("profile");
 
   if (!isOpen) return null;
 
   const isPaid = user?.tier === "paid" || user?.tier === "pro" || user?.tier === "unlimited";
+
+  const handleReplayTourClick = () => {
+    onClose();
+    setTimeout(() => {
+      replayTour();
+    }, 150);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -182,6 +191,49 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   />
                 </div>
               </div>
+
+              <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Compass className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Guided Product Tour</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">Replay the introductory walkthrough of G-AGE features and tools.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleReplayTourClick}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs"
+                >
+                  Replay Tour
+                </button>
+              </div>
+
+              {/* Android APK Download Option */}
+              {onOpenDownload && (
+                <div className="p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Android App (.APK) Package</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Download the official Trusted Web Activity (TWA) self-hosted build.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenDownload();
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Download</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

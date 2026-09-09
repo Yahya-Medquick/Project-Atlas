@@ -8,7 +8,8 @@ import {
   loginWithCredentials,
   verifyNewDevice,
   LoginResult,
-  updatePreferencesMode
+  updatePreferencesMode,
+  updateOnboardingStatus,
 } from "../services/api";
 
 interface UserContextType {
@@ -18,6 +19,12 @@ interface UserContextType {
   isLoadingAuth: boolean;
   profile: UserProfile;
   mode: "research" | "learning";
+  hasSeenOnboarding: boolean;
+  isTourOpen: boolean;
+  tourTriggerCount: number;
+  setIsTourOpen: (open: boolean) => void;
+  completeOnboarding: () => Promise<void>;
+  replayTour: () => void;
   toggleMode: () => void;
   setMode: (mode: "research" | "learning") => void;
   registerUser: (payload: { username: string; password: string; phone: string }) => Promise<UserAuth>;
@@ -53,6 +60,12 @@ const UserContext = createContext<UserContextType>({
   isLoadingAuth: true,
   profile: defaultProfile,
   mode: "research",
+  hasSeenOnboarding: true,
+  isTourOpen: false,
+  tourTriggerCount: 0,
+  setIsTourOpen: () => {},
+  completeOnboarding: async () => {},
+  replayTour: () => {},
   toggleMode: () => {},
   setMode: () => {},
   registerUser: async () => ({} as UserAuth),
@@ -77,6 +90,17 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return (localStorage.getItem("bifrost_mode") as any) || "research";
   });
 
+  // Onboarding state
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return (
+      localStorage.getItem("gage_has_seen_onboarding") === "true" ||
+      localStorage.getItem("has_seen_onboarding") === "true"
+    );
+  });
+  const [isTourOpen, setIsTourOpen] = useState<boolean>(false);
+  const [tourTriggerCount, setTourTriggerCount] = useState<number>(0);
+
   const loadUserSession = async () => {
     try {
       const authUser = await fetchCurrentUser();
@@ -86,6 +110,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem("bifrost_guest_mode");
         if (authUser.preferred_mode) {
           setMode(authUser.preferred_mode);
+        }
+        if (typeof authUser.has_seen_onboarding === "boolean") {
+          setHasSeenOnboarding(authUser.has_seen_onboarding);
+          if (authUser.has_seen_onboarding) {
+            localStorage.setItem("gage_has_seen_onboarding", "true");
+            localStorage.setItem("has_seen_onboarding", "true");
+          }
         }
         setProfile((prev) => ({
           ...prev,
@@ -102,6 +133,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (savedMode === "research" || savedMode === "learning") {
           setMode(savedMode);
         }
+        const localOnboarding =
+          localStorage.getItem("gage_has_seen_onboarding") === "true" ||
+          localStorage.getItem("has_seen_onboarding") === "true";
+        setHasSeenOnboarding(localOnboarding);
       }
     } catch (err) {
       console.warn("User session load error:", err);
@@ -113,6 +148,26 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     loadUserSession();
   }, []);
+
+  const completeOnboarding = async () => {
+    setHasSeenOnboarding(true);
+    setIsTourOpen(false);
+    localStorage.setItem("gage_has_seen_onboarding", "true");
+    localStorage.setItem("has_seen_onboarding", "true");
+    if (user) {
+      setUser((prev) => (prev ? { ...prev, has_seen_onboarding: true } : prev));
+      try {
+        await updateOnboardingStatus(true);
+      } catch (err) {
+        console.warn("Failed to update onboarding status on server:", err);
+      }
+    }
+  };
+
+  const replayTour = () => {
+    setIsTourOpen(true);
+    setTourTriggerCount((prev) => prev + 1);
+  };
 
   const toggleMode = async () => {
     const nextMode = mode === "research" ? "learning" : "research";
@@ -263,6 +318,12 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoadingAuth,
         profile,
         mode,
+        hasSeenOnboarding,
+        isTourOpen,
+        tourTriggerCount,
+        setIsTourOpen,
+        completeOnboarding,
+        replayTour,
         toggleMode,
         setMode: setModeExplicit,
         registerUser: handleRegisterUser,

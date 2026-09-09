@@ -14,6 +14,7 @@ import { PaywallModal } from './components/chat/PaywallModal';
 import { PwaShortcutModal } from './components/chat/PwaShortcutModal';
 import { AuthModal } from './components/AuthModal';
 import { NotesSidePanel } from './components/NotesSidePanel';
+import { ProductTour } from './components/ProductTour';
 import { ExpertPersona, matchExpert } from './data/experts';
 import { usePersonas } from './hooks/usePersonas';
 import { ChatMode, ChatMessage } from './types/chat';
@@ -39,6 +40,9 @@ const CompiledNotesModal = lazy(() =>
 );
 const KnowledgeGraphModal = lazy(() =>
   import('./components/KnowledgeGraphModal').then((m) => ({ default: m.KnowledgeGraphModal }))
+);
+const AndroidDownloadPage = lazy(() =>
+  import('./components/AndroidDownloadPage').then((m) => ({ default: m.AndroidDownloadPage }))
 );
 
 export default function App() {
@@ -95,6 +99,14 @@ export default function App() {
   const [isTimelineOpen, setIsTimelineOpen] = useState<boolean>(false);
   const [isApiDocsOpen, setIsApiDocsOpen] = useState<boolean>(false);
   const [isNotesOpen, setIsNotesOpen] = useState<boolean>(false);
+  const [isDownloadOpen, setIsDownloadOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.location.pathname.startsWith('/download') ||
+      window.location.search.includes('view=download') ||
+      window.location.search.includes('action=download')
+    );
+  });
   const [savedNotesCount, setSavedNotesCount] = useState<number>(0);
   const [saveNoteToast, setSaveNoteToast] = useState<boolean>(false);
   const [isKnowledgeGraphOpen, setIsKnowledgeGraphOpen] = useState<boolean>(false);
@@ -104,6 +116,36 @@ export default function App() {
     subjectTags: string[];
   }>({ isOpen: false, compiledText: '', subjectTags: [] });
   const [pwaPersona, setPwaPersona] = useState<ExpertPersona | null>(null);
+
+  const handleOpenDownload = useCallback(() => {
+    setIsDownloadOpen(true);
+    if (window.location.pathname !== '/download') {
+      window.history.pushState({}, '', '/download');
+    }
+  }, []);
+
+  const handleCloseDownload = useCallback(() => {
+    setIsDownloadOpen(false);
+    if (window.location.pathname === '/download') {
+      window.history.pushState({}, '', '/');
+    }
+  }, []);
+
+  // Listen to popstate for /download browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      if (
+        window.location.pathname.startsWith('/download') ||
+        window.location.search.includes('view=download')
+      ) {
+        setIsDownloadOpen(true);
+      } else {
+        setIsDownloadOpen(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Selected persona resolution
   const { globalExperts, pkExperts } = usePersonas();
@@ -369,6 +411,7 @@ export default function App() {
         onOpenProfile={() => setIsProfileOpen(true)}
         onOpenLogin={() => setIsLoginOpen(true)}
         onOpenPaywall={triggerPaywall}
+        onOpenDownload={handleOpenDownload}
         queryUsage={usage}
         theme={theme}
         toggleTheme={toggleTheme}
@@ -427,6 +470,7 @@ export default function App() {
         persona={pwaPersona}
         isOpen={!!pwaPersona}
         onClose={() => setPwaPersona(null)}
+        onOpenDownload={handleOpenDownload}
       />
 
       <AuthModal
@@ -441,6 +485,13 @@ export default function App() {
       />
 
       <Suspense fallback={null}>
+        {isDownloadOpen && (
+          <AndroidDownloadPage
+            isOpen={isDownloadOpen}
+            onClose={handleCloseDownload}
+          />
+        )}
+
         <KnowledgeGraphModal
           isOpen={isKnowledgeGraphOpen}
           onClose={() => setIsKnowledgeGraphOpen(false)}
@@ -473,6 +524,7 @@ export default function App() {
             createSession(currentPersonaId, 'concept', topic, topic, expertVariant);
           }}
           onClearHistory={() => {}}
+          onOpenDownload={handleOpenDownload}
         />
 
         <TopicCompareModal
@@ -496,6 +548,9 @@ export default function App() {
           onClose={() => setIsApiDocsOpen(false)}
         />
       </Suspense>
+
+      {/* Guided Product Tour */}
+      <ProductTour />
 
       {/* Subtle Save Note Toast Notification */}
       {saveNoteToast && (

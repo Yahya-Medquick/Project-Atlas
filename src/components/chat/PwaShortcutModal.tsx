@@ -16,12 +16,14 @@ interface PwaShortcutModalProps {
   persona: ExpertPersona | null;
   isOpen: boolean;
   onClose: () => void;
+  onOpenDownload?: () => void;
 }
 
 export const PwaShortcutModal: React.FC<PwaShortcutModalProps> = ({
   persona,
   isOpen,
   onClose,
+  onOpenDownload,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -145,6 +147,31 @@ export const PwaShortcutModal: React.FC<PwaShortcutModalProps> = ({
                 <li>Or drag the URL lock icon directly onto your desktop or taskbar dock.</li>
               </ol>
             </div>
+
+            {/* Android APK Alternative Callout */}
+            {onOpenDownload && (
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-emerald-950 dark:text-emerald-200 text-xs flex items-center gap-1.5">
+                    <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Android .APK Package Available</span>
+                  </div>
+                  <div className="text-[10px] text-emerald-700 dark:text-emerald-300">
+                    Prefer direct APK installation over browser PWA?
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleClose();
+                    onOpenDownload();
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition-colors cursor-pointer shrink-0 shadow-2xs"
+                >
+                  Get .APK
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

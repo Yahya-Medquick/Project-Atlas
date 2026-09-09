@@ -522,6 +522,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
 
           {/* WhatsApp Group / Contact Profile Pill */}
           <div
+            id="tour-persona-toggle"
             onClick={onToggleRightPanel}
             className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
             title="Click to view specialists and switch persona"
@@ -565,7 +566,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
         {/* Center/Right Section: WhatsApp Style Mode Tabs & Quick Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Mode Switcher Tabs */}
-          <div className="flex items-center p-0.5 rounded-xl bg-slate-200/70 dark:bg-[#111b21] border border-slate-300/60 dark:border-[#2a3942] text-xs">
+          <div id="tour-mode-switcher" className="flex items-center p-0.5 rounded-xl bg-slate-200/70 dark:bg-[#111b21] border border-slate-300/60 dark:border-[#2a3942] text-xs">
             <button
               onClick={() => handleModeChange('concept')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -607,7 +608,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
           </div>
 
           {/* Quick Tools: MCQ Quiz, Rigor Definitions, Knowledge Graph */}
-          <div className="hidden lg:flex items-center gap-1 border-l border-slate-300 dark:border-[#2a3942] pl-2">
+          <div id="tour-quick-tools" className="hidden lg:flex items-center gap-1 border-l border-slate-300 dark:border-[#2a3942] pl-2">
             <button
               onClick={() => setShowMCQCard(!showMCQCard)}
               className={`p-1.5 px-2 rounded-lg border transition-colors flex items-center gap-1 text-xs font-semibold cursor-pointer ${
@@ -648,6 +649,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
 
           {/* Specifications Accordion Button */}
           <button
+            id="tour-specs-btn"
             onClick={() => setIsSpecsOpen(!isSpecsOpen)}
             className={`p-1.5 rounded-lg border transition-colors flex items-center gap-1 text-xs font-semibold cursor-pointer ${
               isSpecsOpen
@@ -1270,6 +1272,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
 
               {/* Auto-growing Textarea */}
               <textarea
+                id="tour-chat-input"
                 ref={textareaRef}
                 rows={1}
                 value={inputText}

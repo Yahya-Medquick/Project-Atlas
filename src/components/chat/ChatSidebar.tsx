@@ -20,6 +20,10 @@ import {
   Shield,
   Sparkles,
   CheckCircle2,
+  Compass,
+  HelpCircle,
+  Smartphone,
+  Download,
 } from 'lucide-react';
 import { ChatSession } from '../../types/chat';
 import { useUser } from '../../context/UserContext';
@@ -42,6 +46,7 @@ interface ChatSidebarProps {
   onOpenProfile: () => void;
   onOpenLogin: () => void;
   onOpenPaywall: () => void;
+  onOpenDownload?: () => void;
   queryUsage: {
     count: number;
     limit: number;
@@ -70,11 +75,12 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   onOpenProfile,
   onOpenLogin,
   onOpenPaywall,
+  onOpenDownload,
   queryUsage,
   theme,
   toggleTheme,
 }) => {
-  const { user, isLoggedIn, logout } = useUser();
+  const { user, isLoggedIn, logout, replayTour } = useUser();
   const [searchQuery, setSearchQuery] = useState('');
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -395,7 +401,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         </div>
 
         {/* Query Limits & Upgrade Banner */}
-        <div className="p-3 border-t border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-950/70 shrink-0 space-y-2">
+        <div id="tour-quota-badge" className="p-3 border-t border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-950/70 shrink-0 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
               <Zap className="w-3.5 h-3.5 text-amber-500" />
@@ -437,11 +443,12 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
         {/* Bottom Quick Tools & User Profile */}
         <div className="p-2.5 border-t border-slate-200/80 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-950/60 shrink-0 space-y-1.5">
-          {/* Action Row: Notes, Admin, Theme */}
-          <div className="grid grid-cols-3 gap-1">
+          {/* Action Row: Notes, Product Tour, Admin, Theme */}
+          <div className="grid grid-cols-4 gap-1">
             <button
+              id="tour-notes-btn"
               onClick={onOpenNotes}
-              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-indigo-500 transition-colors flex items-center justify-center relative"
+              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-indigo-500 transition-colors flex items-center justify-center relative cursor-pointer"
               title="Compiled Notes"
             >
               <FileText className="w-4 h-4" />
@@ -453,8 +460,16 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             </button>
 
             <button
+              onClick={replayTour}
+              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-emerald-500 transition-colors flex items-center justify-center cursor-pointer"
+              title="Guided Product Tour (Replay)"
+            >
+              <Compass className="w-4 h-4" />
+            </button>
+
+            <button
               onClick={onOpenAdmin}
-              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-purple-500 transition-colors flex items-center justify-center"
+              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-purple-500 transition-colors flex items-center justify-center cursor-pointer"
               title="Admin Dashboard"
             >
               <Cpu className="w-4 h-4" />
@@ -462,12 +477,29 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
             <button
               onClick={toggleTheme}
-              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-cyan-500 transition-colors flex items-center justify-center"
+              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-cyan-500 transition-colors flex items-center justify-center cursor-pointer"
               title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
+
+          {/* Android APK Download Quick Button */}
+          {onOpenDownload && (
+            <button
+              onClick={onOpenDownload}
+              className="w-full py-1.5 px-2.5 rounded-xl bg-slate-200/70 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-slate-300/80 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer group"
+              title="Download Android App (.APK)"
+            >
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-3.5 h-3.5 text-emerald-500 group-hover:scale-110 transition-transform" />
+                <span className="text-[11px]">Android App (.APK)</span>
+              </div>
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                v1.2
+              </span>
+            </button>
+          )}
 
           {/* User Account / Sign In Footer */}
           {isLoggedIn && user ? (
