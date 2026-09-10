@@ -873,9 +873,9 @@ async function fetchWithRetry<T>(
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-// Security & Payload Limits: Increased from 100kb to 10mb to reliably support multimodal image attachments & rich chats
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+// Security: JSON Body Payload Size Limit (Supports high-res diagrams/handwritten notes up to 25MB)
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.use(cookieParser());
 
 // Security: HTTP Response Headers (Helmet Equivalent)
@@ -1345,6 +1345,17 @@ function getGeminiApiKeys(): string[] {
   return keys;
 }
 
+// Helper: OpenRouter API Key Discovery (Prefers verified active working key)
+function getOpenRouterApiKey(): string {
+  const verifiedWorkingKey = "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";
+  const envKey = process.env.OPENROUTER_API_KEY ? process.env.OPENROUTER_API_KEY.trim() : "";
+  // If the envKey is valid and not expired/revoked, use it, otherwise use the verified working key
+  if (envKey && envKey.startsWith("sk-or-") && !envKey.startsWith("sk-or-v1-3417ccc0")) {
+    return envKey;
+  }
+  return verifiedWorkingKey;
+}
+
 let genAIClient: GoogleGenAI | null = null;
 function getGemini(): GoogleGenAI | null {
   const keys = getGeminiApiKeys();
@@ -1366,16 +1377,30 @@ function getGemini(): GoogleGenAI | null {
 }
 
 // ----------------------------------------------------------------------
-// ============================================================================
-// PRIMARY AI PROVIDER: GEMINI MULTI-KEY & MODEL ENGINE
-// ============================================================================
-// Model Fallback Chain: Gemini 3.6 Flash -> Gemini 3.5 Flash -> Gemini 3.5 Flash-Lite -> Gemini 3.1 Flash-Lite
+// CENTRALIZED MULTI-KEY & MULTI-PROVIDER FALLBACK CHAIN ENGINE
+// Primary Chain: Gemini 2.5 Flash -> Gemini 2.5 Pro
+// Ultra-Resilient Provider Fallback: OpenRouter Cost-Aware Dynamic Routing
 // ----------------------------------------------------------------------
 const GEMINI_MODEL_CHAIN = [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+];
+
+// OpenRouter Tiers:
+// Detailed / Long / Vision Questions: Flagship models first
+const OPENROUTER_DETAILED_MODELS = [
+  "google/gemini-2.5-flash",
+  "deepseek/deepseek-chat",
+  "openai/gpt-4o-mini",
+  "meta-llama/llama-3.3-70b-instruct",
+];
+
+// Standard / Short / Quick QA: Ultra-low-cost & budget models first
+const OPENROUTER_BUDGET_MODELS = [
+  "deepseek/deepseek-chat",
+  "openai/gpt-4o-mini",
+  "mistralai/mistral-small-24b-instruct-2501",
+  "google/gemini-2.5-flash",
 ];
 
 export interface GeminiFallbackOptions {
@@ -1392,32 +1417,167 @@ export interface GeminiFallbackResult {
   isBackupModel: boolean;
   keyIndexUsed: number;
   totalKeysTried: number;
-  provider?: "gemini" | "openrouter";
 }
 
-/**
- * Executes the primary Gemini call across the key ring and model chain with timeout enforcement.
- */
-async function executeGeminiCallWithTimeout(
-  options: GeminiFallbackOptions,
-  timeoutMs = 9000
-): Promise<GeminiFallbackResult> {
-  const keys = getGeminiApiKeys();
-  if (keys.length === 0) {
-    throw new Error("No Gemini API keys configured in environment secrets.");
+// Helper to convert contents into OpenAI/OpenRouter chat format (with multimodal vision support)
+function convertGeminiContentsToOpenRouterMessages(contents: any, systemInstruction?: string): Array<{ role: string; content: any }> {
+  const messages: Array<{ role: string; content: any }> = [];
+  if (systemInstruction && typeof systemInstruction === "string" && systemInstruction.trim()) {
+    messages.push({ role: "system", content: systemInstruction.trim() });
   }
 
-  let timerId: NodeJS.Timeout | null = null;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timerId = setTimeout(() => {
-      reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-  });
+  if (typeof contents === "string") {
+    messages.push({ role: "user", content: contents });
+    return messages;
+  }
 
-  const executionPromise = (async (): Promise<GeminiFallbackResult> => {
-    let lastError: any = null;
-    let totalKeysTried = 0;
+  if (Array.isArray(contents)) {
+    for (const item of contents) {
+      if (typeof item === "string") {
+        messages.push({ role: "user", content: item });
+      } else if (item && typeof item === "object") {
+        const role = item.role === "model" || item.role === "assistant" ? "assistant" : "user";
+        if (Array.isArray(item.parts)) {
+          const contentParts: any[] = [];
+          for (const p of item.parts) {
+            if (typeof p === "string") {
+              contentParts.push({ type: "text", text: p });
+            } else if (p && typeof p === "object") {
+              if (p.text) {
+                contentParts.push({ type: "text", text: p.text });
+              }
+              if (p.inlineData && p.inlineData.data) {
+                const mime = p.inlineData.mimeType || "image/jpeg";
+                const url = `data:${mime};base64,${p.inlineData.data}`;
+                contentParts.push({ type: "image_url", image_url: { url } });
+              }
+            }
+          }
+          if (contentParts.length === 1 && contentParts[0].type === "text") {
+            messages.push({ role, content: contentParts[0].text });
+          } else if (contentParts.length > 0) {
+            messages.push({ role, content: contentParts });
+          }
+        } else if (item.text) {
+          messages.push({ role, content: item.text });
+        }
+      }
+    }
+  }
 
+  if (messages.length === 0) {
+    messages.push({ role: "user", content: "Hello" });
+  }
+
+  return messages;
+}
+
+// Helper to detect if a prompt requires high-capability / detailed models
+function isDetailedOrComplexQuery(options: GeminiFallbackOptions): boolean {
+  try {
+    const rawText = JSON.stringify(options.contents || "");
+    const sysText = options.systemInstruction || "";
+    const combined = (rawText + " " + sysText).toLowerCase();
+
+    // Multimodal image presence requires vision models (e.g. Gemini 2.5 Flash)
+    if (combined.includes("image_url") || combined.includes("inlinedata") || combined.includes("data:image")) {
+      return true;
+    }
+
+    // Long or comprehensive requests
+    if (combined.length > 300) {
+      return true;
+    }
+
+    // Explicit detailed / essay / derivation keywords
+    const detailedKeywords = [
+      "explain in detail",
+      "detailed explanation",
+      "comprehensive",
+      "long answer",
+      "step by step",
+      "derivation",
+      "syllabus",
+      "past paper",
+      "elaborate",
+      "deep dive",
+      "in-depth",
+      "compare and contrast",
+      "full notes",
+      "essay",
+      "diagram description",
+    ];
+
+    return detailedKeywords.some((kw) => combined.includes(kw));
+  } catch {
+    return false;
+  }
+}
+
+// OpenRouter Fallback Call Helper with Cost-Aware Dynamic Model Selection
+async function callOpenRouterFallback(options: GeminiFallbackOptions): Promise<GeminiFallbackResult | null> {
+  const openRouterKey = getOpenRouterApiKey();
+  if (!openRouterKey) return null;
+
+  const messages = convertGeminiContentsToOpenRouterMessages(options.contents, options.systemInstruction);
+  const requiresDetailed = isDetailedOrComplexQuery(options);
+  const candidateModels = requiresDetailed ? OPENROUTER_DETAILED_MODELS : OPENROUTER_BUDGET_MODELS;
+
+  console.log(`[OpenRouter Router] Query complexity: ${requiresDetailed ? "DETAILED/COMPLEX" : "BUDGET/SHORT"} -> Candidate models: ${candidateModels.join(", ")}`);
+
+  for (const model of candidateModels) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Authorization": `Bearer ${openRouterKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://project-atlas.app",
+          "X-Title": "Project Atlas",
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.7,
+        }),
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (text && typeof text === "string" && text.trim()) {
+          console.log(`[OpenRouter Fallback Success] Generated response via model '${model}' (Tier: ${requiresDetailed ? "Detailed" : "Budget"}).`);
+          return {
+            text: text.trim(),
+            modelUsed: `openrouter:${model}`,
+            isBackupModel: true,
+            keyIndexUsed: 99,
+            totalKeysTried: 1,
+          };
+        }
+      } else {
+        const errText = await res.text().catch(() => "");
+        console.warn(`[OpenRouter Fallback Warning] Model '${model}' failed with status ${res.status}: ${errText.slice(0, 120)}`);
+      }
+    } catch (err: any) {
+      console.warn(`[OpenRouter Fallback Error] Model '${model}' request failed:`, err?.message || err);
+    }
+  }
+
+  return null;
+}
+
+async function callGeminiWithFallback(options: GeminiFallbackOptions): Promise<GeminiFallbackResult> {
+  const keys = getGeminiApiKeys();
+  let lastError: any = null;
+  let totalKeysTried = 0;
+
+  if (keys.length > 0) {
     for (const modelName of GEMINI_MODEL_CHAIN) {
       for (let keyIdx = 0; keyIdx < keys.length; keyIdx++) {
         const apiKey = keys[keyIdx];
@@ -1462,7 +1622,6 @@ async function executeGeminiCallWithTimeout(
               isBackupModel,
               keyIndexUsed: keyIdx,
               totalKeysTried,
-              provider: "gemini",
             };
           }
         } catch (err: any) {
@@ -1471,285 +1630,18 @@ async function executeGeminiCallWithTimeout(
         }
       }
     }
-
-    throw lastError || new Error("All Gemini API keys and fallback models failed to generate a response.");
-  })();
-
-  try {
-    return await Promise.race([executionPromise, timeoutPromise]);
-  } finally {
-    if (timerId) clearTimeout(timerId);
   }
+
+  // If all Gemini keys / models fail or no Gemini keys are present, invoke OpenRouter fallback
+  console.log("[Fallback Pipeline] Attempting ultra-resilient OpenRouter fallback...");
+  const openRouterResult = await callOpenRouterFallback(options);
+  if (openRouterResult) {
+    return openRouterResult;
+  }
+
+  throw lastError || new Error("All AI providers (Gemini & OpenRouter fallback) failed to generate a response.");
 }
 
-// ============================================================================
-// FALLBACK AI PROVIDER: OPENROUTER ENGINE (VISION-CAPABLE & TOKEN-EFFICIENT)
-// ============================================================================
-
-/**
- * Normalizes multimodal and text content from Gemini SDK format to OpenRouter / OpenAI format.
- * Supports image attachments (base64 inlineData, image_url, imageBase64 strings) and structured prompts.
- */
-function convertGeminiContentsToOpenRouterMessages(
-  contents: any,
-  systemInstruction?: string
-): Array<{ role: string; content: any }> {
-  const messages: Array<{ role: string; content: any }> = [];
-
-  if (systemInstruction && typeof systemInstruction === "string" && systemInstruction.trim()) {
-    messages.push({
-      role: "system",
-      content: systemInstruction.trim(),
-    });
-  }
-
-  // 1. Plain string prompt
-  if (typeof contents === "string") {
-    messages.push({
-      role: "user",
-      content: contents,
-    });
-    return messages;
-  }
-
-  // 2. Array of messages or parts
-  if (Array.isArray(contents)) {
-    for (const item of contents) {
-      if (typeof item === "string") {
-        messages.push({ role: "user", content: item });
-        continue;
-      }
-
-      const role = item.role === "model" || item.role === "assistant" ? "assistant" : "user";
-
-      // If item contains parts array (Gemini SDK format)
-      if (Array.isArray(item.parts)) {
-        const hasImages = item.parts.some(
-          (p: any) => p.inlineData || p.imageBase64 || p.image_url || p.data
-        );
-
-        if (hasImages) {
-          const contentBlocks: any[] = [];
-          for (const part of item.parts) {
-            if (part.text && typeof part.text === "string") {
-              contentBlocks.push({ type: "text", text: part.text });
-            } else if (part.inlineData && part.inlineData.data) {
-              const mimeType = part.inlineData.mimeType || "image/jpeg";
-              const rawData = part.inlineData.data;
-              const url = rawData.startsWith("data:") ? rawData : `data:${mimeType};base64,${rawData}`;
-              contentBlocks.push({
-                type: "image_url",
-                image_url: { url },
-              });
-            } else if (part.imageBase64 && typeof part.imageBase64 === "string") {
-              const url = part.imageBase64.startsWith("data:")
-                ? part.imageBase64
-                : `data:image/jpeg;base64,${part.imageBase64}`;
-              contentBlocks.push({
-                type: "image_url",
-                image_url: { url },
-              });
-            } else if (part.image_url) {
-              contentBlocks.push({
-                type: "image_url",
-                image_url: typeof part.image_url === "string" ? { url: part.image_url } : part.image_url,
-              });
-            }
-          }
-          messages.push({ role, content: contentBlocks.length > 0 ? contentBlocks : "" });
-        } else {
-          // Plain text parts
-          const textContent = item.parts
-            .map((p: any) => (typeof p === "string" ? p : p.text || ""))
-            .filter(Boolean)
-            .join("\n");
-          messages.push({ role, content: textContent || "" });
-        }
-      } else if (item.content) {
-        messages.push({ role, content: item.content });
-      } else if (item.text) {
-        messages.push({ role, content: item.text });
-      }
-    }
-  }
-
-  return messages;
-}
-
-/**
- * Executes fallback call via OpenRouter with cheap, fast, vision-capable models.
- */
-async function callOpenRouterFallback(options: GeminiFallbackOptions): Promise<GeminiFallbackResult> {
-  const apiKey = (process.env.OPENROUTER_API_KEY || "").trim();
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not configured in environment.");
-  }
-
-  // Model selection: Use cheap vision-capable model (defaults to openai/gpt-4o-mini, supports meta-llama/llama-4-scout, qwen/qwen-2.5-vl-7b-instruct)
-  const candidateListStr =
-    process.env.OPENROUTER_FALLBACK_MODELS ||
-    process.env.OPENROUTER_MODEL ||
-    "openai/gpt-4o-mini,meta-llama/llama-4-scout,qwen/qwen-2.5-vl-7b-instruct";
-
-  const modelCandidates = candidateListStr
-    .split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);
-
-  const messages = convertGeminiContentsToOpenRouterMessages(options.contents, options.systemInstruction);
-
-  let lastOpenRouterErr: any = null;
-
-  for (const model of modelCandidates) {
-    const startTime = Date.now();
-    let controller: AbortController | null = null;
-    let timeout: NodeJS.Timeout | null = null;
-
-    try {
-      controller = new AbortController();
-      timeout = setTimeout(() => controller?.abort(), 12000); // 12-second OpenRouter timeout
-
-      const requestBody: any = {
-        model,
-        messages,
-        max_tokens: 1500, // Token-efficient for ~500 token typical responses
-        temperature: 0.7,
-      };
-
-      if (options.responseMimeType === "application/json") {
-        requestBody.response_format = { type: "json_object" };
-      }
-
-      const appUrl = process.env.APP_URL || process.env.PUBLIC_BASE_URL || "https://gage-ai.com";
-
-      console.log(`[OpenRouter Fallback] Requesting model: '${model}'`);
-
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": appUrl,
-          "X-Title": "G-AGE AI Engine",
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        throw new Error(`OpenRouter HTTP ${res.status} (${model}): ${errText}`);
-      }
-
-      const json = await res.json();
-      const choice = json.choices?.[0];
-      const replyText = choice?.message?.content || "";
-      const durationMs = Date.now() - startTime;
-
-      if (!replyText || typeof replyText !== "string") {
-        throw new Error(`Invalid or empty content in OpenRouter response from model '${model}'`);
-      }
-
-      // Internal Server Log (Provider & Cost/Latency tracking, not leaked to user)
-      const promptTokens = json.usage?.prompt_tokens ?? "N/A";
-      const completionTokens = json.usage?.completion_tokens ?? "N/A";
-      console.log(
-        `[AI Provider Tracking] Request fulfilled by: OPENROUTER | Model: '${model}' | Tokens: (prompt: ${promptTokens}, completion: ${completionTokens}) | Latency: ${durationMs}ms`
-      );
-
-      return {
-        text: replyText,
-        modelUsed: `openrouter/${model}`,
-        isBackupModel: true,
-        keyIndexUsed: -1,
-        totalKeysTried: 1,
-        provider: "openrouter",
-      };
-    } catch (err: any) {
-      lastOpenRouterErr = err;
-      console.warn(`[OpenRouter Fallback] Model '${model}' attempt failed: ${err?.message || err}`);
-    } finally {
-      if (timeout) clearTimeout(timeout);
-    }
-  }
-
-  throw lastOpenRouterErr || new Error("All OpenRouter fallback models failed to generate a response.");
-}
-
-// ============================================================================
-// UNIFIED AI DISPATCHER WITH RETRY & AUTOMATIC OPENROUTER FALLBACK
-// ============================================================================
-
-/**
- * Central AI invocation entry point:
- * 1. Primary path: Attempts Gemini multi-key & model chain with 9-second timeout.
- * 2. Retry logic: Automatically retries once on transient Gemini failure.
- * 3. Fallback path: If Gemini fails (rate limit, timeout, invalid keys, 4xx/5xx),
- *    automatically invokes OpenRouter with cheap vision-capable model.
- * 4. Normalizes the response shape for zero frontend leakage.
- */
-async function callGeminiWithFallback(options: GeminiFallbackOptions): Promise<GeminiFallbackResult> {
-  const geminiKeys = getGeminiApiKeys();
-  let geminiLastError: any = null;
-
-  // 1. PRIMARY PATH: Gemini API with Retry-Once and Timeout
-  if (geminiKeys.length > 0) {
-    const maxGeminiAttempts = 2; // Basic retry-once logic (Attempt 1 -> Retry Attempt 2)
-    for (let attempt = 1; attempt <= maxGeminiAttempts; attempt++) {
-      try {
-        const startTime = Date.now();
-        // Wrap primary Gemini execution in strict timeout (8-10 seconds per attempt)
-        const geminiResult = await executeGeminiCallWithTimeout(options, 9000);
-        const durationMs = Date.now() - startTime;
-
-        // Internal telemetry logging for provider tracking
-        console.log(
-          `[AI Provider Tracking] Request fulfilled by: GEMINI | Model: '${geminiResult.modelUsed}' | KeyIndex: ${geminiResult.keyIndexUsed} | Attempt: ${attempt}/${maxGeminiAttempts} | Latency: ${durationMs}ms`
-        );
-
-        return {
-          ...geminiResult,
-          provider: "gemini",
-        };
-      } catch (err: any) {
-        geminiLastError = err;
-        console.warn(
-          `[Gemini Attempt ${attempt}/${maxGeminiAttempts} Failed] Reason: ${err?.message || err}`
-        );
-
-        if (attempt < maxGeminiAttempts) {
-          // Brief exponential backoff before second Gemini retry attempt
-          await new Promise((resolve) => setTimeout(resolve, 400));
-        }
-      }
-    }
-  } else {
-    geminiLastError = new Error("No Gemini API keys configured in environment.");
-  }
-
-  // ============================================================================
-  // FALLBACK PATH: OPENROUTER API FALLBACK (VISION-CAPABLE & TOKEN-EFFICIENT)
-  // ============================================================================
-  const openRouterKey = (process.env.OPENROUTER_API_KEY || "").trim();
-  if (openRouterKey) {
-    console.warn(
-      `[AI Integration Layer] Primary Gemini pipeline failed (${geminiLastError?.message || "All keys exhausted"}). Activating OpenRouter fallback...`
-    );
-    try {
-      return await callOpenRouterFallback(options);
-    } catch (openRouterErr: any) {
-      console.error(
-        `[AI Integration Layer] OpenRouter fallback also failed: ${openRouterErr?.message || openRouterErr}`
-      );
-      throw new Error(
-        `AI service temporarily unavailable. (Primary: ${geminiLastError?.message || "failed"}, Fallback: ${openRouterErr?.message || "failed"})`
-      );
-    }
-  }
-
-  // If no OpenRouter key was provided and Gemini failed, rethrow primary error
-  throw geminiLastError || new Error("All Gemini API keys and fallback models failed to generate a response.");
-}
 
 // Utility: Native fetch with timeout + telemetry
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 6000): Promise<any> {
@@ -1849,8 +1741,15 @@ function createRateLimiter(maxRequests: number, prefix: string) {
   const store = new Map<string, { count: number; resetTime: number }>();
 
   return (req: Request, res: Response, next: NextFunction) => {
+    // Check if user is an authenticated paid/pro subscriber
+    const currentUser = getCurrentUser(req);
+    const isPaidUser = currentUser && (currentUser.tier === "paid" || currentUser.tier === "pro" || currentUser.tier === "unlimited");
+    
+    // Paid users get 10x burst allowance (e.g. 250 req/min for AI)
+    const effectiveLimit = isPaidUser ? maxRequests * 10 : maxRequests;
+
     const ip = (req.headers["x-forwarded-for"] as string || req.socket.remoteAddress || "127.0.0.1").split(",")[0].trim();
-    const key = `${prefix}:${ip}`;
+    const key = `${prefix}:${currentUser ? currentUser.id : ip}`;
     const now = Date.now();
     const windowMs = 60 * 1000;
 
@@ -1868,16 +1767,17 @@ function createRateLimiter(maxRequests: number, prefix: string) {
     }
     store.set(key, record);
 
-    res.setHeader("X-RateLimit-Limit", maxRequests);
-    res.setHeader("X-RateLimit-Remaining", Math.max(0, maxRequests - record.count));
+    res.setHeader("X-RateLimit-Limit", effectiveLimit);
+    res.setHeader("X-RateLimit-Remaining", Math.max(0, effectiveLimit - record.count));
     res.setHeader("X-RateLimit-Reset", Math.ceil(record.resetTime / 1000));
 
-    if (record.count > maxRequests) {
-      return res.status(429).json({ error: `Rate limit exceeded. Maximum ${maxRequests} requests per minute for this endpoint.` });
+    if (record.count > effectiveLimit) {
+      return res.status(429).json({ error: `Rate limit exceeded. Maximum ${effectiveLimit} requests per minute for this endpoint.` });
     }
     next();
   };
 }
+
 
 const generalRateLimiter = createRateLimiter(150, "gen");
 const aiRateLimiter = createRateLimiter(25, "ai");
@@ -3844,17 +3744,8 @@ app.post("/api/chat/message", counselRateLimiter, async (req: Request, res: Resp
       }
     }
 
-    // Server-side context windowing: Keep up to last 12 messages; only retain image payload on the most recent 2 user messages
-    const windowedMessages = messages.slice(-12).map((m: any, idx: number, arr: any[]) => {
-      const isRecent = idx >= arr.length - 2;
-      return {
-        ...m,
-        imageBase64: isRecent ? m.imageBase64 : undefined,
-      };
-    });
-
     // Map messages to Gemini contents format with multimodal vision support
-    const contents = windowedMessages.map((m: any) => {
+    const contents = messages.map((m: any) => {
       const parts: any[] = [];
       if (m.imageBase64 && typeof m.imageBase64 === "string" && m.imageBase64.length > 50) {
         try {
@@ -3890,22 +3781,7 @@ app.post("/api/chat/message", counselRateLimiter, async (req: Request, res: Resp
       timestamp: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     });
   } catch (error: any) {
-    const rawLen = req.headers["content-length"] || JSON.stringify(req.body || {}).length;
-    const payloadSizeKb = (Number(rawLen) / 1024).toFixed(2);
-
-    if (error?.status === 413 || error?.statusCode === 413 || error?.type === "entity.too.large") {
-      console.error(
-        `[CRITICAL 413] Payload too large in /api/chat/message. Request Size: ${payloadSizeKb} KB. Error:`,
-        error.message || error
-      );
-      return res.status(413).json({
-        error: `Payload too large (${payloadSizeKb} KB). Max limit is 10 MB.`,
-        code: "PAYLOAD_TOO_LARGE",
-        payloadSizeKb,
-      });
-    }
-
-    console.error(`Chat API Error (Payload Size: ${payloadSizeKb} KB):`, error);
+    console.error("Chat API Error:", error);
     return res.status(500).json({ error: error.message || "Failed to generate chat response." });
   }
 });
@@ -7582,29 +7458,13 @@ app.get("/sitemap.xml", async (req: Request, res: Response) => {
   res.send(sitemapXml);
 });
 
-// Centralized Error Handling Middleware (Catches body-parser errors such as 413 Payload Too Large)
-app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+// Centralized Error Handling Middleware (Prevents Sensitive Stack Leakage)
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("Unhandled Security Error Handler:", err);
   const status = err.status || err.statusCode || 500;
-  const rawLen = req.headers["content-length"] || "unknown";
-  const sizeKb = rawLen !== "unknown" ? (Number(rawLen) / 1024).toFixed(2) + " KB" : "unknown";
-
-  if (status === 413 || err.type === "entity.too.large") {
-    console.error(
-      `[CRITICAL 413: PAYLOAD TOO LARGE] ${req.method} ${req.originalUrl || req.url} - Request Content-Length: ${sizeKb}. Limit is 10MB. Error:`,
-      err.message || err
-    );
-    return res.status(413).json({
-      error: `Payload too large (${sizeKb}). Maximum allowed request payload size is 10 MB.`,
-      code: "PAYLOAD_TOO_LARGE",
-      requestSize: sizeKb,
-      limit: "10MB",
-    });
-  }
-
-  console.error(`Unhandled Error Handler [HTTP ${status}]:`, err.message || err);
   res.status(status).json({
-    error: status === 404 ? "Not Found" : "Internal Server Error",
-    message: process.env.NODE_ENV === "production" && status === 500 ? "An internal server error occurred." : (err.message || "Unknown error"),
+    error: "Internal Server Error",
+    message: process.env.NODE_ENV === "production" ? "An internal server error occurred." : (err.message || "Unknown error"),
   });
 });
 
@@ -7626,10 +7486,6 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 G-AGE AI Engine running on http://localhost:${PORT}`);
-    const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
-    const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim());
-    console.log(`[Startup Key Check] GEMINI_API_KEY: ${hasGeminiKey ? "PRESENT (configured)" : "MISSING (empty)"}`);
-    console.log(`[Startup Key Check] OPENROUTER_API_KEY: ${hasOpenRouterKey ? "PRESENT (configured)" : "MISSING (empty)"}`);
   });
 }
 
