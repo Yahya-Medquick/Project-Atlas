@@ -311,16 +311,6 @@ export default function App() {
     updateSessionMessages(currentSession.id, newMessages, newTitle);
     setIsLoadingMessage(true);
 
-    // Maintain optimal context window (send last 12 messages; only retain base64 image on the most recent 2 user messages)
-    const sanitizedContextMessages = newMessages.slice(-12).map((m, idx, arr) => {
-      const isRecentImage = idx >= arr.length - 2;
-      return {
-        role: m.role,
-        content: m.content,
-        imageBase64: isRecentImage ? m.imageBase64 : undefined,
-      };
-    });
-
     try {
       const response = await fetch('/api/chat/message', {
         method: 'POST',
@@ -331,19 +321,25 @@ export default function App() {
           mode: targetMode,
           specs: currentSession.specs || {},
           variant: currentSession.variant || expertVariant,
-          messages: sanitizedContextMessages,
+          messages: newMessages.map((m) => ({ role: m.role, content: m.content, imageBase64: m.imageBase64 })),
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        if (response.status === 413) {
-          console.error(`[413 Payload Too Large Error]: ${errorData.error || 'Request body exceeded limit'}`);
-          throw new Error(errorData.error || 'The image or message payload is too large. Please upload a smaller image.');
-        }
-        if (response.status === 429 || response.status === 403 || errorData.isPaywall) {
+        if (response.status === 429 || response.status === 403 || errorData.isPaywall || errorData.paywallTrigger) {
           triggerPaywall();
-          throw new Error(errorData.error || 'Query limit reached. Upgrade to Pro.');
+          // Remove the loading user message or show clear message
+          const limitMsg: ChatMessage = {
+            id: `msg_${Date.now()}_a`,
+            role: 'assistant',
+            content: `⚠️ **Query Limit Reached**\n\n${errorData.message || errorData.error || 'You have reached your daily query allowance. Please upgrade to Pro for unlimited AI queries and vision analysis.'}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+            mode: targetMode,
+            personaId: currentSession.personaId,
+          };
+          updateSessionMessages(currentSession.id, [...newMessages, limitMsg], newTitle);
+          return;
         }
         throw new Error(errorData.error || `Server returned ${response.status}`);
       }
@@ -362,23 +358,21 @@ export default function App() {
 
       updateSessionMessages(currentSession.id, [...newMessages, assistantMessage], newTitle);
     } catch (err: any) {
-      console.warn('Chat error, falling back to local fallback:', err);
-      // Fallback assistant response
-      const fallbackReply = `### ${activePersona.name} (${targetMode.toUpperCase()} MODE)\n\nThank you for exploring **${content.trim() || 'this question'}**.\n\n$$\\mathcal{H} |\\psi\\rangle = E |\\psi\\rangle$$\n\nHere is a foundational breakdown:\n1. **Core Mechanism**: In ${targetMode} mode, we analyze the structural invariants.\n2. **Next Steps**: Feel free to request step-by-step derivations or exam rubrics.`;
-
-      const fallbackMsg: ChatMessage = {
+      console.warn('Chat error:', err);
+      const errorMsg: ChatMessage = {
         id: `msg_${Date.now()}_a`,
         role: 'assistant',
-        content: fallbackReply,
+        content: `⚠️ **Connection Error**\n\nUnable to generate response: ${err.message || 'Please check your connection and try again.'}`,
         timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
         mode: targetMode,
         personaId: currentSession.personaId,
       };
 
-      updateSessionMessages(currentSession.id, [...newMessages, fallbackMsg], newTitle);
+      updateSessionMessages(currentSession.id, [...newMessages, errorMsg], newTitle);
     } finally {
       setIsLoadingMessage(false);
     }
+
   };
 
   // Auto-dismiss save note toast notification after 2 seconds
